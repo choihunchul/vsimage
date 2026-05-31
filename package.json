@@ -17,8 +17,8 @@
     "commands": [
       {
         "command": "vsimage.newEditor",
-        "title": "Image: New Empty Image Editor",
-        "category": "Image Editor"
+        "title": "Create Empty Image Editor",
+        "category": "vsimage"
       }
     ],
     "customEditors": [

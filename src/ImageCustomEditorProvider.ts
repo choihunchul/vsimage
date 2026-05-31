@@ -160,7 +160,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <!-- Workspace Area -->
                     <div class="canvas-workspace" id="workspace" style="display: none;">
                         <div class="image-container">
-                            <img id="image" src="${imgWebviewUri}">
+                            <img id="image" ${imgWebviewUri ? `src="${imgWebviewUri}"` : ''}>
                         </div>
                         <div class="floating-toolbar" id="toolbar" style="display: none;">
                             <button class="tb-btn" id="btnZoomIn">Zoom In</button>

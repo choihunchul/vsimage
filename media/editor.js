@@ -30,7 +30,7 @@
     const cardPaste = document.getElementById('cardPaste');
 
     // Mode dispatcher
-    if (!imageEl || !imageEl.src || imageEl.src.endsWith('undefined') || imageEl.src === '') {
+    if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
         // Empty editor launcher mode
         dashboard.style.display = 'flex';
         workspace.style.display = 'none';
