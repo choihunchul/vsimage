@@ -89,6 +89,36 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         }
     }
 
+    public createUntitledEditor(): void {
+        const panel = vscode.window.createWebviewPanel(
+            'vsimage.untitled',
+            'Untitled Image Editor',
+            vscode.ViewColumn.Active,
+            {
+                enableScripts: true,
+                localResourceRoots: [
+                    vscode.Uri.file(path.join(this.context.extensionPath, 'media'))
+                ]
+            }
+        );
+
+        panel.webview.html = this.getHtmlForWebview(panel.webview);
+
+        panel.webview.onDidReceiveMessage(async message => {
+            switch (message.command) {
+                case 'save-image':
+                    await this.exportImage(message.arrayBuffer, message.mimeType);
+                    return;
+                case 'export-image':
+                    await this.exportImage(message.arrayBuffer, message.mimeType);
+                    return;
+                case 'show-toast':
+                    vscode.window.showInformationMessage(message.text);
+                    return;
+            }
+        });
+    }
+
     private getHtmlForWebview(webview: vscode.Webview, imageUri?: vscode.Uri): string {
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.js')));
         const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.css')));
