@@ -25,6 +25,8 @@
     let isCircular = false;
     let undoStack = [];
     let initialImageSrc = '';
+    let isEyedropperActive = false;
+    let eraseTargetBounds = null;
 
     const lblDimensions = document.getElementById('lblDimensions');
     const lblFilename = document.getElementById('lblFilename');
@@ -424,7 +426,7 @@
         });
     }
 
-    // Selection Erase Engine
+    // Selection Erase & Eyedropper Color-Fill Engine
     function eraseSelection() {
         if (!cropper) return;
         if (!chkEnableCrop.checked || !cropper.cropped) {
@@ -432,10 +434,41 @@
             return;
         }
 
-        // Push current source to undo stack before erase mutation
+        const data = cropper.getData();
+        isEyedropperActive = true;
+        eraseTargetBounds = data;
+        
+        // Set visual cursor classes
+        workspace.classList.add('eyedropper-active');
+        vscode.postMessage({ 
+            command: 'show-toast', 
+            text: 'Eyedropper active. Click on the image to fill with color, or click on the grid to make it transparent.' 
+        });
+    }
+
+    // Workspace click handler during capture phase to implement Eyedropper sampling
+    workspace.addEventListener('click', (e) => {
+        if (!isEyedropperActive || !eraseTargetBounds) return;
+        
+        // Prevent cropper from intercepting the click and closing
+        e.stopPropagation();
+        e.preventDefault();
+
+        const imageData = cropper.getImageData();
+        const rect = cropper.container.getBoundingClientRect();
+        
+        const xInContainer = e.clientX - rect.left;
+        const yInContainer = e.clientY - rect.top;
+        
+        const xInImage = xInContainer - imageData.left;
+        const yInImage = yInContainer - imageData.top;
+
+        // Check if the click lies inside the actual responsive boundary of the image
+        const isClickOnImage = xInImage >= 0 && xInImage <= imageData.width && yInImage >= 0 && yInImage <= imageData.height;
+
+        // Backup current source to undo stack before erase/fill mutation
         undoStack.push(imageEl.src);
 
-        const data = cropper.getData();
         const canvas = document.createElement('canvas');
         canvas.width = originalWidth;
         canvas.height = originalHeight;
@@ -444,27 +477,67 @@
         // Draw current image
         ctx.drawImage(imageEl, 0, 0);
 
-        // Clear target selection path
-        if (isCircular) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(data.x + data.width / 2, data.y + data.height / 2, data.width / 2, 0, Math.PI * 2);
-            ctx.clip();
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.restore();
+        if (isClickOnImage) {
+            // Draw original image on a temporary canvas to sample pixel color
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = originalWidth;
+            tempCanvas.height = originalHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(imageEl, 0, 0);
+
+            const naturalX = Math.round((xInImage / imageData.width) * imageData.naturalWidth);
+            const naturalY = Math.round((yInImage / imageData.height) * imageData.naturalHeight);
+            
+            const clampedX = Math.max(0, Math.min(originalWidth - 1, naturalX));
+            const clampedY = Math.max(0, Math.min(originalHeight - 1, naturalY));
+
+            const pixel = tempCtx.getImageData(clampedX, clampedY, 1, 1).data;
+            const color = `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3] / 255})`;
+
+            // Fill target marquee selection with the sampled color
+            ctx.fillStyle = color;
+            if (isCircular) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(eraseTargetBounds.x + eraseTargetBounds.width / 2, eraseTargetBounds.y + eraseTargetBounds.height / 2, eraseTargetBounds.width / 2, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+                ctx.fillRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+                ctx.restore();
+            } else {
+                ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+                ctx.fillRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+            }
+
+            vscode.postMessage({ command: 'show-toast', text: 'Selection filled with color. Press Ctrl+Z to undo.' });
         } else {
-            ctx.clearRect(data.x, data.y, data.width, data.height);
+            // Erase target marquee selection to transparent
+            if (isCircular) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(eraseTargetBounds.x + eraseTargetBounds.width / 2, eraseTargetBounds.y + eraseTargetBounds.height / 2, eraseTargetBounds.width / 2, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+                ctx.restore();
+            } else {
+                ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+            }
+
+            vscode.postMessage({ command: 'show-toast', text: 'Selection erased to transparent. Press Ctrl+Z to undo.' });
         }
 
         const newSrc = canvas.toDataURL();
         initEditor(newSrc);
-        
+
+        // Turn off eyedropper mode
+        isEyedropperActive = false;
+        eraseTargetBounds = null;
+        workspace.classList.remove('eyedropper-active');
+
         // Reset crop mode checkbox
         chkEnableCrop.checked = false;
         syncCropPresetUI();
-
-        vscode.postMessage({ command: 'show-toast', text: 'Selection erased. Press Ctrl+Z to undo.' });
-    }
+    }, true); // Capture phase is critical to intercept clicks over Cropper overlays!
 
     // Custom Context Menu event listeners
     workspace.addEventListener('contextmenu', (e) => {
@@ -632,9 +705,16 @@
             return;
         }
 
-        // Escape: clear selection and uncheck crop box
+        // Escape: clear selection, cancel eyedropper, or uncheck crop box
         if (e.key === 'Escape') {
             e.preventDefault();
+            if (isEyedropperActive) {
+                isEyedropperActive = false;
+                eraseTargetBounds = null;
+                workspace.classList.remove('eyedropper-active');
+                vscode.postMessage({ command: 'show-toast', text: 'Eyedropper mode cancelled.' });
+                return;
+            }
             if (cropper) {
                 chkEnableCrop.checked = false;
                 syncCropPresetUI();
