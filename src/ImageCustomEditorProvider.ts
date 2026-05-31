@@ -169,6 +169,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             <div class="tb-divider"></div>
                             <button class="tb-btn" id="btnRotateLeft" title="Rotate Left ([)">⟲</button>
                             <button class="tb-btn" id="btnRotateRight" title="Rotate Right (])">⟳</button>
+                            <button class="tb-btn" id="btnFlipH" title="Flip Horizontal">↔</button>
+                            <button class="tb-btn" id="btnFlipV" title="Flip Vertical">↕</button>
                             <div class="tb-divider"></div>
                             <button class="tb-btn" id="btnReset" title="Reset (Ctrl+0)">Reset</button>
                         </div>
@@ -254,6 +256,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <div class="context-menu-item" id="ctxErase">
                         <span>✂️ Delete Selection</span>
                         <span class="context-menu-shortcut">Del</span>
+                    </div>
+                    <div class="context-menu-divider"></div>
+                    <div class="context-menu-item" id="ctxFlipH">
+                        <span>↔️ Flip Horizontal</span>
+                    </div>
+                    <div class="context-menu-item" id="ctxFlipV">
+                        <span>↕️ Flip Vertical</span>
                     </div>
                     <div class="context-menu-divider"></div>
                     <div class="context-menu-item" id="ctxSave">

@@ -23,6 +23,8 @@
     let originalHeight = 0;
     let aspectRatio = 0;
     let isCircular = false;
+    let scaleX = 1;
+    let scaleY = 1;
     let undoStack = [];
     let initialImageSrc = '';
     let isEyedropperActive = false;
@@ -113,6 +115,8 @@
             originalWidth = imageEl.naturalWidth;
             originalHeight = imageEl.naturalHeight;
             aspectRatio = originalWidth / originalHeight;
+            scaleX = 1;
+            scaleY = 1;
 
             lblDimensions.textContent = `${originalWidth} × ${originalHeight}`;
             txtWidth.value = originalWidth;
@@ -280,8 +284,22 @@
     });
     document.getElementById('btnRotateLeft').addEventListener('click', () => cropper && cropper.rotate(-90));
     document.getElementById('btnRotateRight').addEventListener('click', () => cropper && cropper.rotate(90));
+    document.getElementById('btnFlipH').addEventListener('click', () => {
+        if (cropper) {
+            scaleX = -scaleX;
+            cropper.scaleX(scaleX);
+        }
+    });
+    document.getElementById('btnFlipV').addEventListener('click', () => {
+        if (cropper) {
+            scaleY = -scaleY;
+            cropper.scaleY(scaleY);
+        }
+    });
     document.getElementById('btnReset').addEventListener('click', () => {
         if (cropper) {
+            scaleX = 1;
+            scaleY = 1;
             if (imageEl.src !== initialImageSrc) {
                 undoStack.push(imageEl.src);
                 initEditor(initialImageSrc);
@@ -638,6 +656,24 @@
         e.stopPropagation();
         contextMenu.style.display = 'none';
         eraseSelection();
+    });
+
+    document.getElementById('ctxFlipH').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        if (cropper) {
+            scaleX = -scaleX;
+            cropper.scaleX(scaleX);
+        }
+    });
+
+    document.getElementById('ctxFlipV').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        if (cropper) {
+            scaleY = -scaleY;
+            cropper.scaleY(scaleY);
+        }
     });
 
     document.getElementById('ctxSave').addEventListener('click', (e) => {
