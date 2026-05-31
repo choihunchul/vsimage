@@ -1,6 +1,37 @@
 (function() {
     const vscode = acquireVsCodeApi();
     const isDocumentEditor = !!window.__vsimageDocumentEditor;
+    const l10n = window.__vsimageL10n || {};
+
+    function t(key, replacements) {
+        let message = l10n[key] || key;
+        if (replacements) {
+            Object.keys(replacements).forEach((name) => {
+                message = message.replace(new RegExp(`\\{${name}\\}`, 'g'), replacements[name]);
+            });
+        }
+        return message;
+    }
+
+    function applyI18n(root) {
+        const scope = root || document;
+        scope.querySelectorAll('[data-i18n]').forEach((el) => {
+            el.textContent = t(el.getAttribute('data-i18n'));
+        });
+        scope.querySelectorAll('[data-i18n-html]').forEach((el) => {
+            el.innerHTML = t(el.getAttribute('data-i18n-html'));
+        });
+        scope.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            el.title = t(el.getAttribute('data-i18n-title'));
+        });
+        scope.querySelectorAll('[data-i18n-label]').forEach((el) => {
+            const qualityVal = el.querySelector('#qualityVal');
+            const value = qualityVal ? qualityVal.textContent : '80';
+            el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="qualityVal">${value}</span>%)`;
+        });
+    }
+
+    applyI18n();
     const imageEl = document.getElementById('image');
     const sidebar = document.getElementById('sidebar');
     const toolbar = document.getElementById('toolbar');
@@ -61,11 +92,11 @@
     const contextMenu = document.getElementById('contextMenu');
     const shortcutOverlay = document.getElementById('shortcutOverlay');
 
-    function notifyDocumentChanged(label) {
+    function notifyDocumentChanged(labelKey) {
         if (!isDocumentEditor) {
             return;
         }
-        vscode.postMessage({ command: 'document-changed', label: label || 'Edit' });
+        vscode.postMessage({ command: 'document-changed', label: t(labelKey) });
     }
 
     function pushUndoSnapshot() {
@@ -106,9 +137,9 @@
         undoStack.push(canvas.toDataURL());
     }
 
-    function markTransformEdit(label) {
+    function markTransformEdit(labelKey) {
         pushUndoSnapshot();
-        notifyDocumentChanged(label);
+        notifyDocumentChanged(labelKey);
     }
 
     function respondWithImageData(requestId) {
@@ -147,7 +178,7 @@
             lblFilename.textContent = filename;
         }
         initEditor(src, { preserveInitialSrc: true });
-        vscode.postMessage({ command: 'show-toast', text: 'Reverted to last saved version.' });
+        vscode.postMessage({ command: 'show-toast', text: t('toast.reverted') });
     }
 
     window.addEventListener('message', (event) => {
@@ -190,6 +221,76 @@
         });
     }
 
+    function updateCropInteraction() {
+        if (!cropper) {
+            return;
+        }
+        if (isSpacePressed || isEyedropperActive || isColorPickerMode) {
+            cropper.setDragMode('none');
+            return;
+        }
+        cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
+    }
+
+    function moveCropMarqueeWithArrow(key, shiftKey) {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            return false;
+        }
+        if (isSpacePressed || isEyedropperActive || isColorPickerMode) {
+            return false;
+        }
+
+        const data = cropper.getData(true);
+        const step = shiftKey ? 10 : 1;
+        let nextX = data.x;
+        let nextY = data.y;
+
+        switch (key) {
+            case 'ArrowLeft':
+                nextX -= step;
+                break;
+            case 'ArrowRight':
+                nextX += step;
+                break;
+            case 'ArrowUp':
+                nextY -= step;
+                break;
+            case 'ArrowDown':
+                nextY += step;
+                break;
+            default:
+                return false;
+        }
+
+        nextX = Math.max(0, Math.min(originalWidth - data.width, nextX));
+        nextY = Math.max(0, Math.min(originalHeight - data.height, nextY));
+
+        cropper.setData({
+            x: nextX,
+            y: nextY,
+            width: data.width,
+            height: data.height
+        });
+        updateResizeInputsFromCrop();
+        return true;
+    }
+
+    function preserveCropData(callback) {
+        if (!cropper) {
+            return;
+        }
+        const savedCropData = (chkEnableCrop.checked && cropper.cropped)
+            ? cropper.getData(true)
+            : null;
+        if (typeof callback === 'function') {
+            callback();
+        }
+        if (savedCropData) {
+            cropper.setData(savedCropData);
+            updateResizeInputsFromCrop();
+        }
+    }
+
     /** Expand the Cropper.js container to the actual zoomed canvas size so the
      *  scroll area shows the full image. Called after every zoom/ready event. */
     function expandContainerToCanvas() {
@@ -209,32 +310,34 @@
         }
 
         expandingContainer = true;
-        try {
-            resetCanvasOrigin();
+        preserveCropData(() => {
+            try {
+                resetCanvasOrigin();
 
-            const w = Math.ceil(imgData.width);
-            const h = Math.ceil(imgData.height);
-            const viewportW = canvasScrollArea.clientWidth;
-            const viewportH = canvasScrollArea.clientHeight;
-            const totalW = w + (CANVAS_PADDING * 2);
-            const totalH = h + (CANVAS_PADDING * 2);
-            const contentW = Math.max(viewportW, totalW);
-            const contentH = Math.max(viewportH, totalH);
+                const w = Math.ceil(imgData.width);
+                const h = Math.ceil(imgData.height);
+                const viewportW = canvasScrollArea.clientWidth;
+                const viewportH = canvasScrollArea.clientHeight;
+                const totalW = w + (CANVAS_PADDING * 2);
+                const totalH = h + (CANVAS_PADDING * 2);
+                const contentW = Math.max(viewportW, totalW);
+                const contentH = Math.max(viewportH, totalH);
 
-            cropperContEl.style.width = w + 'px';
-            cropperContEl.style.height = h + 'px';
-            cropperContEl.style.overflow = 'hidden';
+                cropperContEl.style.width = w + 'px';
+                cropperContEl.style.height = h + 'px';
+                cropperContEl.style.overflow = 'hidden';
 
-            imgContainerEl.style.width = w + 'px';
-            imgContainerEl.style.height = h + 'px';
-            imgContainerEl.style.marginLeft = contentW > totalW ? Math.floor((contentW - totalW) / 2) + 'px' : '0';
-            imgContainerEl.style.marginTop = contentH > totalH ? Math.floor((contentH - totalH) / 2) + 'px' : '0';
+                imgContainerEl.style.width = w + 'px';
+                imgContainerEl.style.height = h + 'px';
+                imgContainerEl.style.marginLeft = contentW > totalW ? Math.floor((contentW - totalW) / 2) + 'px' : '0';
+                imgContainerEl.style.marginTop = contentH > totalH ? Math.floor((contentH - totalH) / 2) + 'px' : '0';
 
-            canvasScrollContent.style.width = contentW + 'px';
-            canvasScrollContent.style.height = contentH + 'px';
-        } finally {
-            expandingContainer = false;
-        }
+                canvasScrollContent.style.width = contentW + 'px';
+                canvasScrollContent.style.height = contentH + 'px';
+            } finally {
+                expandingContainer = false;
+            }
+        });
 
         drawRulers();
     }
@@ -457,9 +560,7 @@
         if (!active && canvasScrollArea) {
             canvasScrollArea.classList.remove('pan-grabbing');
         }
-        if (cropper) {
-            cropper.setDragMode(active ? 'none' : 'crop');
-        }
+        updateCropInteraction();
     }
 
     function endPanning() {
@@ -586,7 +687,7 @@
 
     // Clipboard Paste trigger click
     cardPaste.addEventListener('click', () => {
-        vscode.postMessage({ command: 'show-toast', text: 'Press Cmd+V / Ctrl+V to paste your clipboard image.' });
+        vscode.postMessage({ command: 'show-toast', text: t('toast.pasteHint') });
     });
 
     // Global Clipboard paste listener
@@ -616,7 +717,7 @@
     function loadFile(file) {
         const reader = new FileReader();
         reader.onload = (event) => {
-            lblFilename.textContent = file.name || 'Pasted Image';
+            lblFilename.textContent = file.name || t('pastedImage');
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
             initEditor(event.target.result);
@@ -624,8 +725,31 @@
         reader.readAsDataURL(file);
     }
 
+    function getViewportFitRatio() {
+        if (!canvasScrollArea) {
+            return 1;
+        }
+        const availW = Math.max(1, canvasScrollArea.clientWidth - (CANVAS_PADDING * 2));
+        const availH = Math.max(1, canvasScrollArea.clientHeight - (CANVAS_PADDING * 2));
+        return Math.min(availW / originalWidth, availH / originalHeight, 1);
+    }
+
+    function applyZoomAfterResize(preferredRatio) {
+        if (!cropper) {
+            return;
+        }
+        const maxFit = getViewportFitRatio();
+        let ratio = preferredRatio != null ? preferredRatio : maxFit;
+        ratio = Math.min(ratio, maxFit);
+        cropper.zoomTo(ratio);
+        initialFitRatio = maxFit;
+        updateZoomIndicator();
+    }
+
     function initEditor(src, options) {
         const preserveInitialSrc = options && options.preserveInitialSrc;
+        const afterResize = options && options.afterResize;
+        const preserveZoomRatio = options && options.preserveZoomRatio;
         invalidateColorPickerCanvas();
         if (!initialImageSrc || preserveInitialSrc) {
             initialImageSrc = src;
@@ -659,34 +783,43 @@
             // Create Cropper
             cropper = new Cropper(imageEl, {
                 aspectRatio: NaN,
-                viewMode: 0,
+                viewMode: 1,
                 background: false,
                 responsive: false,
                 autoCrop: false,
                 zoomOnWheel: false,
+                zoomable: true,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleDragModeOnDblclick: false,
                 ready() {
                     if (canvasScrollArea) {
                         canvasScrollArea.scrollLeft = 0;
                         canvasScrollArea.scrollTop = 0;
-                        const availW = Math.max(1, canvasScrollArea.clientWidth - (CANVAS_PADDING * 2));
-                        const availH = Math.max(1, canvasScrollArea.clientHeight - (CANVAS_PADDING * 2));
-                        const fitRatio = Math.min(availW / originalWidth, availH / originalHeight, 1);
-                        if (fitRatio < 1) {
-                            cropper.zoomTo(fitRatio);
+                        if (afterResize) {
+                            applyZoomAfterResize(preserveZoomRatio);
+                        } else {
+                            const fitRatio = getViewportFitRatio();
+                            if (fitRatio < 1) {
+                                cropper.zoomTo(fitRatio);
+                            }
                         }
                     }
                     updateZoomIndicator();
                     scheduleExpandContainerToCanvas();
                     requestAnimationFrame(() => {
                         scheduleExpandContainerToCanvas();
-                        captureInitialFitRatio();
+                        if (!afterResize) {
+                            captureInitialFitRatio();
+                        }
                     });
-                    if (isSpacePressed) {
-                        cropper.setDragMode('none');
-                    }
+                    updateCropInteraction();
                     if (cropper.cropped) {
                         updateResizeInputsFromCrop();
                     }
+                },
+                cropmove() {
+                    updateResizeInputsFromCrop();
                 },
                 crop() {
                     if (cropper && cropper.cropped && !chkEnableCrop.checked) {
@@ -762,6 +895,7 @@
         if (btnApplyCrop) {
             btnApplyCrop.disabled = !isEnabled;
         }
+        updateCropInteraction();
     }
 
     // Crop Toggle Checkbox listener
@@ -852,28 +986,28 @@
     });
     document.getElementById('btnRotateLeft').addEventListener('click', () => {
         if (cropper) {
-            markTransformEdit('Rotate');
+            markTransformEdit('edit.rotate');
             cropper.rotate(-90);
             scheduleExpandContainerToCanvas();
         }
     });
     document.getElementById('btnRotateRight').addEventListener('click', () => {
         if (cropper) {
-            markTransformEdit('Rotate');
+            markTransformEdit('edit.rotate');
             cropper.rotate(90);
             scheduleExpandContainerToCanvas();
         }
     });
     document.getElementById('btnFlipH').addEventListener('click', () => {
         if (cropper) {
-            markTransformEdit('Flip Horizontal');
+            markTransformEdit('edit.flipH');
             scaleX = -scaleX;
             cropper.scaleX(scaleX);
         }
     });
     document.getElementById('btnFlipV').addEventListener('click', () => {
         if (cropper) {
-            markTransformEdit('Flip Vertical');
+            markTransformEdit('edit.flipV');
             scaleY = -scaleY;
             cropper.scaleY(scaleY);
         }
@@ -939,9 +1073,16 @@
             }
 
             const newSrc = canvas.toDataURL();
-            initEditor(newSrc);
-            notifyDocumentChanged('Resize');
-            vscode.postMessage({ command: 'show-toast', text: 'Resize applied. Press Ctrl+Z to undo.' });
+            let preserveZoomRatio = null;
+            if (cropper) {
+                const imgData = cropper.getImageData();
+                if (imgData && imgData.naturalWidth) {
+                    preserveZoomRatio = imgData.width / imgData.naturalWidth;
+                }
+            }
+            initEditor(newSrc, { afterResize: true, preserveZoomRatio });
+            notifyDocumentChanged('edit.resize');
+            vscode.postMessage({ command: 'show-toast', text: t('toast.resizeApplied') });
         }
     });
 
@@ -949,7 +1090,7 @@
     btnApplyCrop.addEventListener('click', () => {
         if (!cropper) return;
         if (!chkEnableCrop.checked || !cropper.cropped) {
-            vscode.postMessage({ command: 'show-toast', text: 'Please enable crop and select a region first.' });
+            vscode.postMessage({ command: 'show-toast', text: t('toast.cropSelectFirst') });
             return;
         }
 
@@ -983,8 +1124,8 @@
         chkEnableCrop.checked = false;
         syncCropPresetUI();
 
-        notifyDocumentChanged('Crop');
-        vscode.postMessage({ command: 'show-toast', text: 'Crop applied. Press Ctrl+Z to undo.' });
+        notifyDocumentChanged('edit.crop');
+        vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
     });
 
     // Hook up saving triggers
@@ -1000,7 +1141,7 @@
         
         window.editorApi.getCanvasBlob((blob) => {
             if (!blob) {
-                vscode.postMessage({ command: 'show-toast', text: 'No image data to copy' });
+                vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
                 return;
             }
             
@@ -1009,9 +1150,9 @@
                     [blob.type]: blob
                 })
             ]).then(() => {
-                vscode.postMessage({ command: 'show-toast', text: 'Image copied to clipboard!' });
+                vscode.postMessage({ command: 'show-toast', text: t('toast.imageCopied') });
             }).catch((err) => {
-                vscode.postMessage({ command: 'show-toast', text: 'Clipboard write failed: ' + err });
+                vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardFailed', { error: String(err) }) });
             });
         });
     }
@@ -1182,7 +1323,7 @@
         ensureColorPickerCanvas();
         workspace.classList.add('color-picker-active');
         if (cropper) {
-            cropper.setDragMode('none');
+            updateCropInteraction();
         }
 
         if (colorPickerTooltip) {
@@ -1205,11 +1346,7 @@
             colorPickerTooltip.style.display = 'none';
         }
 
-        if (cropper && !isSpacePressed) {
-            cropper.setDragMode('crop');
-        } else if (cropper && isSpacePressed) {
-            cropper.setDragMode('none');
-        }
+        updateCropInteraction();
     }
 
     function updateColorPickerPreview(e) {
@@ -1288,16 +1425,16 @@
             btn.innerHTML = `
                 <span class="color-format-label">${fmt.label}</span>
                 <span class="color-format-value">${fmt.value}</span>
-                <span class="color-format-copy">복사</span>
+                <span class="color-format-copy">${t('colorModal.copy')}</span>
             `;
             btn.addEventListener('click', () => {
                 copyTextToClipboard(fmt.value).then(() => {
                     colorFormatList.querySelectorAll('.color-format-item').forEach((el) => el.classList.remove('copied'));
                     btn.classList.add('copied');
-                    btn.querySelector('.color-format-copy').textContent = '복사됨';
-                    vscode.postMessage({ command: 'show-toast', text: `${fmt.label} 복사됨: ${fmt.value}` });
+                    btn.querySelector('.color-format-copy').textContent = t('colorModal.copied');
+                    vscode.postMessage({ command: 'show-toast', text: t('toast.colorCopied', { format: fmt.label, value: fmt.value }) });
                 }).catch(() => {
-                    vscode.postMessage({ command: 'show-toast', text: '클립보드 복사에 실패했습니다.' });
+                    vscode.postMessage({ command: 'show-toast', text: t('toast.colorCopyFailed') });
                 });
             });
             colorFormatList.appendChild(btn);
@@ -1395,7 +1532,7 @@
     function eraseSelection() {
         if (!cropper) return;
         if (!chkEnableCrop.checked || !cropper.cropped) {
-            vscode.postMessage({ command: 'show-toast', text: 'Please select a crop region to erase first.' });
+            vscode.postMessage({ command: 'show-toast', text: t('toast.eraseSelectFirst') });
             return;
         }
 
@@ -1423,7 +1560,7 @@
         workspace.classList.add('eyedropper-active');
         vscode.postMessage({ 
             command: 'show-toast', 
-            text: 'Eyedropper active. Click on the image to fill with color, or click on the grid to make it transparent.' 
+            text: t('toast.eyedropperActive')
         });
     }
 
@@ -1529,7 +1666,7 @@
                 ctx.fillRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
             }
 
-            vscode.postMessage({ command: 'show-toast', text: 'Selection filled with color. Press Ctrl+Z to undo.' });
+            vscode.postMessage({ command: 'show-toast', text: t('toast.selectionFilled') });
         } else {
             // Erase target marquee selection to transparent
             if (isCircular) {
@@ -1543,12 +1680,12 @@
                 ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
             }
 
-            vscode.postMessage({ command: 'show-toast', text: 'Selection erased to transparent. Press Ctrl+Z to undo.' });
+            vscode.postMessage({ command: 'show-toast', text: t('toast.selectionErased') });
         }
 
         const newSrc = canvas.toDataURL();
         initEditor(newSrc);
-        notifyDocumentChanged(isClickOnImage ? 'Fill Selection' : 'Erase Selection');
+        notifyDocumentChanged(isClickOnImage ? 'edit.fillSelection' : 'edit.eraseSelection');
 
         // Turn off eyedropper mode
         endEyedropper();
@@ -1590,7 +1727,7 @@
         e.stopPropagation();
         contextMenu.style.display = 'none';
         if (cropper) {
-            markTransformEdit('Flip Horizontal');
+            markTransformEdit('edit.flipH');
             scaleX = -scaleX;
             cropper.scaleX(scaleX);
         }
@@ -1600,7 +1737,7 @@
         e.stopPropagation();
         contextMenu.style.display = 'none';
         if (cropper) {
-            markTransformEdit('Flip Vertical');
+            markTransformEdit('edit.flipV');
             scaleY = -scaleY;
             cropper.scaleY(scaleY);
         }
@@ -1712,7 +1849,7 @@
         if (((e.metaKey || e.ctrlKey) && e.key === '[') || e.key === '[') {
             e.preventDefault();
             if (cropper) {
-                markTransformEdit('Rotate');
+                markTransformEdit('edit.rotate');
                 cropper.rotate(-90);
                 scheduleExpandContainerToCanvas();
             }
@@ -1723,7 +1860,7 @@
         if (((e.metaKey || e.ctrlKey) && e.key === ']') || e.key === ']') {
             e.preventDefault();
             if (cropper) {
-                markTransformEdit('Rotate');
+                markTransformEdit('edit.rotate');
                 cropper.rotate(90);
                 scheduleExpandContainerToCanvas();
             }
@@ -1734,6 +1871,14 @@
         if ((e.metaKey || e.ctrlKey) && e.key === '0') {
             e.preventDefault();
             toggleZoomView();
+            return;
+        }
+
+        // Move crop marquee: Arrow keys (Shift = 10px)
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            if (moveCropMarqueeWithArrow(e.key, e.shiftKey)) {
+                e.preventDefault();
+            }
             return;
         }
 
@@ -1797,7 +1942,7 @@
 
                 const newSrc = canvas.toDataURL();
                 initEditor(newSrc);
-                notifyDocumentChanged('Erase Selection');
+                notifyDocumentChanged('edit.eraseSelection');
 
                 endEyedropper();
 
@@ -1805,7 +1950,7 @@
                 chkEnableCrop.checked = false;
                 syncCropPresetUI();
 
-                vscode.postMessage({ command: 'show-toast', text: 'Selection erased to transparent. Press Ctrl+Z to undo.' });
+                vscode.postMessage({ command: 'show-toast', text: t('toast.selectionErased') });
                 return;
             }
             if (cropper) {
@@ -1836,10 +1981,10 @@
             const prevSrc = undoStack.pop();
             initEditor(prevSrc);
             if (!fromHost) {
-                vscode.postMessage({ command: 'show-toast', text: 'Undo successful' });
+                vscode.postMessage({ command: 'show-toast', text: t('toast.undoSuccess') });
             }
         } else if (!fromHost) {
-            vscode.postMessage({ command: 'show-toast', text: 'Nothing to undo' });
+            vscode.postMessage({ command: 'show-toast', text: t('toast.nothingToUndo') });
         }
     }
 
