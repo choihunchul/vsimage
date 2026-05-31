@@ -781,9 +781,40 @@
         // Escape: clear selection, cancel eyedropper, or uncheck crop box
         if (e.key === 'Escape') {
             e.preventDefault();
-            if (isEyedropperActive) {
+            if (isEyedropperActive && eraseTargetBounds) {
+                // Backup current source to undo stack before erase mutation
+                undoStack.push(imageEl.src);
+
+                const canvas = document.createElement('canvas');
+                canvas.width = originalWidth;
+                canvas.height = originalHeight;
+                const ctx = canvas.getContext('2d');
+
+                // Draw current image
+                ctx.drawImage(imageEl, 0, 0);
+
+                // Erase target marquee selection to transparent
+                if (isCircular) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(eraseTargetBounds.x + eraseTargetBounds.width / 2, eraseTargetBounds.y + eraseTargetBounds.height / 2, eraseTargetBounds.width / 2, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+                    ctx.restore();
+                } else {
+                    ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
+                }
+
+                const newSrc = canvas.toDataURL();
+                initEditor(newSrc);
+
                 endEyedropper();
-                vscode.postMessage({ command: 'show-toast', text: 'Eyedropper mode cancelled.' });
+
+                // Reset crop mode checkbox
+                chkEnableCrop.checked = false;
+                syncCropPresetUI();
+
+                vscode.postMessage({ command: 'show-toast', text: 'Selection erased to transparent. Press Ctrl+Z to undo.' });
                 return;
             }
             if (cropper) {
