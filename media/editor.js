@@ -56,11 +56,26 @@
         const imgData = cropper.getImageData();
         if (!imgData || !imgData.naturalWidth) return;
 
+        // ── use actual DOM positions so coordinate math is always correct ──
+        // The Cropper.js canvas element holds the rendered image
+        const cropperCanvas = document.querySelector('.cropper-canvas');
+        if (!cropperCanvas) return;
+
+        const hRect  = rulerH.getBoundingClientRect();   // horizontal ruler position
+        const vRect  = rulerV.getBoundingClientRect();   // vertical ruler position
+        const imgRect = cropperCanvas.getBoundingClientRect(); // rendered image position
+
+        // Where the image top-left is, relative to each ruler canvas
+        const imgLeft = imgRect.left - hRect.left;
+        const imgTop  = imgRect.top  - vRect.top;
+        const dispW   = imgRect.width;
+        const dispH   = imgRect.height;
+
         const cw = rulerH.offsetWidth;
         const ch = rulerV.offsetHeight;
         if (cw < 1 || ch < 1) return;
 
-        // Sync canvas pixel size to CSS size (devicePixelRatio-aware)
+        // ── HiDPI: sync canvas pixel buffer to CSS size ──────────────────
         const dpr = window.devicePixelRatio || 1;
         if (rulerH.width !== Math.round(cw * dpr) || rulerH.height !== Math.round(RULER_SIZE * dpr)) {
             rulerH.width  = Math.round(cw * dpr);
@@ -76,71 +91,69 @@
         hCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         vCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // -- colours
+        // ── colours ──────────────────────────────────────────────────────
         const BG      = '#1a1a1a';
-        const TICK    = '#555555';
-        const IMGLINE = '#007acc';  // image boundary mark
-        const TEXT    = '#888888';
+        const TICK    = '#555';
+        const IMGLINE = '#4da6ff';   // image boundary line colour
+        const TEXT    = '#888';
         const FONT    = '9px monospace';
 
         // Clear
         hCtx.fillStyle = BG; hCtx.fillRect(0, 0, cw, RULER_SIZE);
         vCtx.fillStyle = BG; vCtx.fillRect(0, 0, RULER_SIZE, ch);
 
-        // Bottom/right border lines
+        // Separator lines
         hCtx.strokeStyle = '#333'; hCtx.lineWidth = 1;
         hCtx.beginPath(); hCtx.moveTo(0, RULER_SIZE - 0.5); hCtx.lineTo(cw, RULER_SIZE - 0.5); hCtx.stroke();
         vCtx.strokeStyle = '#333'; vCtx.lineWidth = 1;
         vCtx.beginPath(); vCtx.moveTo(RULER_SIZE - 0.5, 0); vCtx.lineTo(RULER_SIZE - 0.5, ch); vCtx.stroke();
 
-        // Scale: pixels per display pixel
-        const pxPerDisplayPx = imgData.naturalWidth / imgData.width;
-        // Image top-left corner relative to the ruler canvas (which starts at rulerSize offset inside workspace)
-        // We subtract RULER_SIZE from workspace padding to get the content start
-        const imgLeft = imgData.left - RULER_SIZE; // offset in display px within the ruler canvas
-        const imgTop  = imgData.top  - RULER_SIZE;
+        // ── scale: natural image pixels per display pixel ─────────────────
+        const scaleX = imgData.naturalWidth  / dispW;
+        const scaleY = imgData.naturalHeight / dispH;
 
-        // Choose a nice tick interval in natural pixels
-        const targetTickSpacing = 50; // desired px between ticks on screen
-        const naturalStep = Math.pow(10, Math.ceil(Math.log10(targetTickSpacing * pxPerDisplayPx)));
-        const step = naturalStep >= targetTickSpacing * pxPerDisplayPx ? naturalStep : naturalStep * 2;
+        // ── nice tick interval (in natural px) ───────────────────────────
+        function niceStep(scale) {
+            const MIN_SCREEN_GAP = 48; // min px between major ticks
+            const rawStep = MIN_SCREEN_GAP * scale;
+            const exp  = Math.pow(10, Math.floor(Math.log10(rawStep)));
+            const frac = rawStep / exp;
+            const nice = frac < 1.5 ? 1 : frac < 3.5 ? 2 : frac < 7.5 ? 5 : 10;
+            return nice * exp;
+        }
+        const stepX = niceStep(scaleX);
+        const stepY = niceStep(scaleY);
 
-        // Horizontal ruler ticks
-        hCtx.fillStyle  = TEXT;
-        hCtx.font       = FONT;
-        hCtx.textAlign  = 'left';
-        hCtx.textBaseline = 'top';
-
-        const startNatH = Math.floor(-imgLeft * pxPerDisplayPx / step) * step;
-        for (let n = startNatH; n <= imgData.naturalWidth + (-imgLeft * pxPerDisplayPx); n += step) {
-            const x = imgLeft + n / pxPerDisplayPx;
+        // ── horizontal ticks ─────────────────────────────────────────────
+        hCtx.font = FONT; hCtx.textBaseline = 'top';
+        const startNatX = Math.ceil(-imgLeft * scaleX / stepX) * stepX;
+        for (let n = startNatX; n <= imgData.naturalWidth; n += stepX) {
+            const x = imgLeft + n / scaleX;
             if (x < 0 || x > cw) continue;
-            const isMajor = (n % (step * 5) === 0) || step >= 100;
-            const tickH = isMajor ? 8 : 4;
+            const isMajor = (Math.round(n / stepX) % 5 === 0);
+            const tickH   = isMajor ? 9 : 5;
             hCtx.strokeStyle = TICK; hCtx.lineWidth = 1;
             hCtx.beginPath(); hCtx.moveTo(x, RULER_SIZE - tickH); hCtx.lineTo(x, RULER_SIZE); hCtx.stroke();
-            if (isMajor && x > 12) {
+            if (isMajor) {
+                hCtx.fillStyle  = TEXT;
+                hCtx.textAlign  = 'left';
                 hCtx.fillText(String(Math.round(n)), x + 2, 2);
             }
         }
 
-        // Vertical ruler ticks
-        vCtx.fillStyle  = TEXT;
-        vCtx.font       = FONT;
-        vCtx.textAlign  = 'right';
-        vCtx.textBaseline = 'middle';
-
-        const startNatV = Math.floor(-imgTop * pxPerDisplayPx / step) * step;
-        for (let n = startNatV; n <= imgData.naturalHeight + (-imgTop * pxPerDisplayPx); n += step) {
-            const y = imgTop + n / pxPerDisplayPx;
+        // ── vertical ticks ───────────────────────────────────────────────
+        vCtx.font = FONT; vCtx.textBaseline = 'middle';
+        const startNatY = Math.ceil(-imgTop * scaleY / stepY) * stepY;
+        for (let n = startNatY; n <= imgData.naturalHeight; n += stepY) {
+            const y = imgTop + n / scaleY;
             if (y < 0 || y > ch) continue;
-            const isMajor = (n % (step * 5) === 0) || step >= 100;
-            const tickW = isMajor ? 8 : 4;
+            const isMajor = (Math.round(n / stepY) % 5 === 0);
+            const tickW   = isMajor ? 9 : 5;
             vCtx.strokeStyle = TICK; vCtx.lineWidth = 1;
             vCtx.beginPath(); vCtx.moveTo(RULER_SIZE - tickW, y); vCtx.lineTo(RULER_SIZE, y); vCtx.stroke();
-            if (isMajor && y > 8) {
-                // draw rotated text
+            if (isMajor) {
                 vCtx.save();
+                vCtx.fillStyle = TEXT;
                 vCtx.translate(RULER_SIZE - tickW - 2, y);
                 vCtx.rotate(-Math.PI / 2);
                 vCtx.textAlign = 'center';
@@ -149,23 +162,19 @@
             }
         }
 
-        // Image boundary highlight lines
-        const imgRight  = imgLeft + imgData.width;
-        const imgBottom = imgTop  + imgData.height;
+        // ── image boundary accent lines ───────────────────────────────────
+        const imgRight  = imgLeft + dispW;
+        const imgBottom = imgTop  + dispH;
 
-        // Horizontal: left and right image edges
+        hCtx.strokeStyle = IMGLINE; hCtx.lineWidth = 1.5;
         [imgLeft, imgRight].forEach(x => {
-            const inRange = x >= 0 && x <= cw;
-            hCtx.strokeStyle = IMGLINE; hCtx.lineWidth = 1.5;
-            if (inRange) {
+            if (x >= 0 && x <= cw) {
                 hCtx.beginPath(); hCtx.moveTo(x, 0); hCtx.lineTo(x, RULER_SIZE); hCtx.stroke();
             }
         });
-        // Vertical: top and bottom image edges
+        vCtx.strokeStyle = IMGLINE; vCtx.lineWidth = 1.5;
         [imgTop, imgBottom].forEach(y => {
-            const inRange = y >= 0 && y <= ch;
-            vCtx.strokeStyle = IMGLINE; vCtx.lineWidth = 1.5;
-            if (inRange) {
+            if (y >= 0 && y <= ch) {
                 vCtx.beginPath(); vCtx.moveTo(0, y); vCtx.lineTo(RULER_SIZE, y); vCtx.stroke();
             }
         });
