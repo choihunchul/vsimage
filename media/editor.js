@@ -34,6 +34,8 @@
     const filePicker = document.getElementById('filePicker');
     const cardPaste = document.getElementById('cardPaste');
 
+    const contextMenu = document.getElementById('contextMenu');
+
     // Mode dispatcher
     if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
         // Empty editor launcher mode
@@ -355,6 +357,116 @@
     btnSave.addEventListener('click', () => triggerSave('save'));
     btnExport.addEventListener('click', () => triggerSave('export'));
 
+    // Clipboard Copy Engine
+    function copyImageToClipboard() {
+        if (!cropper) return;
+        
+        window.editorApi.getCanvasBlob((blob) => {
+            if (!blob) {
+                vscode.postMessage({ command: 'show-toast', text: 'No image data to copy' });
+                return;
+            }
+            
+            navigator.clipboard.write([
+                new ClipboardItem({
+                    [blob.type]: blob
+                })
+            ]).then(() => {
+                vscode.postMessage({ command: 'show-toast', text: 'Image copied to clipboard!' });
+            }).catch((err) => {
+                vscode.postMessage({ command: 'show-toast', text: 'Clipboard write failed: ' + err });
+            });
+        });
+    }
+
+    // Selection Erase Engine
+    function eraseSelection() {
+        if (!cropper) return;
+        if (!chkEnableCrop.checked || !cropper.cropped) {
+            vscode.postMessage({ command: 'show-toast', text: 'Please select a crop region to erase first.' });
+            return;
+        }
+
+        // Push current source to undo stack before erase mutation
+        undoStack.push(imageEl.src);
+
+        const data = cropper.getData();
+        const canvas = document.createElement('canvas');
+        canvas.width = originalWidth;
+        canvas.height = originalHeight;
+        const ctx = canvas.getContext('2d');
+
+        // Draw current image
+        ctx.drawImage(imageEl, 0, 0);
+
+        // Clear target selection path
+        if (isCircular) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(data.x + data.width / 2, data.y + data.height / 2, data.width / 2, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        } else {
+            ctx.clearRect(data.x, data.y, data.width, data.height);
+        }
+
+        const newSrc = canvas.toDataURL();
+        initEditor(newSrc);
+        
+        // Reset crop mode checkbox
+        chkEnableCrop.checked = false;
+        syncCropPresetUI();
+
+        vscode.postMessage({ command: 'show-toast', text: 'Selection erased. Press Ctrl+Z to undo.' });
+    }
+
+    // Custom Context Menu event listeners
+    workspace.addEventListener('contextmenu', (e) => {
+        if (workspace.style.display === 'none') return;
+        e.preventDefault();
+        
+        // Display context menu at mouse client position
+        contextMenu.style.left = `${e.clientX}px`;
+        contextMenu.style.top = `${e.clientY}px`;
+        contextMenu.style.display = 'block';
+    });
+
+    // Close menu when clicking elsewhere
+    document.addEventListener('click', () => {
+        contextMenu.style.display = 'none';
+    });
+
+    document.getElementById('ctxCopy').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        copyImageToClipboard();
+    });
+
+    document.getElementById('ctxErase').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        eraseSelection();
+    });
+
+    document.getElementById('ctxSave').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        triggerSave('save');
+    });
+
+    document.getElementById('ctxUndo').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        performUndo();
+    });
+
+    document.getElementById('ctxReset').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        document.getElementById('btnReset').click();
+    });
+
     // Global keyboard listener
     document.addEventListener('keydown', (e) => {
         // Guard input elements so typing is not hijacked
@@ -390,6 +502,22 @@
         if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
             e.preventDefault();
             performUndo();
+            return;
+        }
+
+        // Copy: Cmd+C / Ctrl+C
+        if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+            e.preventDefault();
+            copyImageToClipboard();
+            return;
+        }
+
+        // Selection Erase: Delete / Backspace
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (chkEnableCrop.checked && cropper && cropper.cropped) {
+                e.preventDefault();
+                eraseSelection();
+            }
             return;
         }
 

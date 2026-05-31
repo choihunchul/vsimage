@@ -244,6 +244,31 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     </div>
                 </div>
 
+                <!-- Custom Context Menu -->
+                <div class="context-menu" id="contextMenu">
+                    <div class="context-menu-item" id="ctxCopy">
+                        <span>📋 Copy Image</span>
+                        <span class="context-menu-shortcut">Ctrl+C</span>
+                    </div>
+                    <div class="context-menu-item" id="ctxErase">
+                        <span>✂️ Delete Selection</span>
+                        <span class="context-menu-shortcut">Del</span>
+                    </div>
+                    <div class="context-menu-divider"></div>
+                    <div class="context-menu-item" id="ctxSave">
+                        <span>💾 Save</span>
+                        <span class="context-menu-shortcut">Ctrl+S</span>
+                    </div>
+                    <div class="context-menu-item" id="ctxUndo">
+                        <span>↩️ Undo</span>
+                        <span class="context-menu-shortcut">Ctrl+Z</span>
+                    </div>
+                    <div class="context-menu-item" id="ctxReset">
+                        <span>🧹 Reset</span>
+                        <span class="context-menu-shortcut">Ctrl+0</span>
+                    </div>
+                </div>
+
                 <script src="${cropperJsUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
