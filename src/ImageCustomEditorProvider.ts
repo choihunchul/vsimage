@@ -88,8 +88,28 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             </head>
             <body>
                 <div class="editor-wrapper">
+                    <!-- Landing Dashboard Empty State -->
+                    <div class="dashboard-empty" id="dashboard" style="display: none;">
+                        <div style="font-size: 3rem; margin-bottom: 12px;">🖼️</div>
+                        <h2 style="margin: 0 0 10px 0;">Start Editing Image</h2>
+                        <p style="color: #aaa; margin-bottom: 20px; max-width: 400px; font-size: 0.9rem;">
+                            Drag & Drop a local image file here, browse workspace files, or paste an image/screenshot from your clipboard.
+                        </p>
+                        <div class="empty-card-container">
+                            <div class="empty-card" id="cardImport">
+                                <h3 style="margin: 0 0 6px 0; font-size: 1rem;">📂 Import File</h3>
+                                <p style="font-size: 0.75rem; color: #858585;">Choose an image from disk to open.</p>
+                                <input type="file" id="filePicker" accept="image/*" style="display: none;">
+                            </div>
+                            <div class="empty-card" id="cardPaste">
+                                <h3 style="margin: 0 0 6px 0; font-size: 1rem;">📋 Paste Image</h3>
+                                <p style="font-size: 0.75rem; color: #858585;">Press <span class="kbd">Cmd + V</span> or <span class="kbd">Ctrl + V</span> to load clipboard image.</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Workspace Area -->
-                    <div class="canvas-workspace" id="workspace">
+                    <div class="canvas-workspace" id="workspace" style="display: none;">
                         <div class="image-container">
                             <img id="image" src="${imgWebviewUri}">
                         </div>

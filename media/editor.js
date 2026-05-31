@@ -23,9 +23,70 @@
     const lblDimensions = document.getElementById('lblDimensions');
     const lblFilename = document.getElementById('lblFilename');
 
-    // Initialize if image source already exists (Custom Editor Mode)
-    if (imageEl && imageEl.src && !imageEl.src.endsWith('undefined') && imageEl.src !== '') {
+    const dashboard = document.getElementById('dashboard');
+    const workspace = document.getElementById('workspace');
+    const cardImport = document.getElementById('cardImport');
+    const filePicker = document.getElementById('filePicker');
+    const cardPaste = document.getElementById('cardPaste');
+
+    // Mode dispatcher
+    if (!imageEl || !imageEl.src || imageEl.src.endsWith('undefined') || imageEl.src === '') {
+        // Empty editor launcher mode
+        dashboard.style.display = 'flex';
+        workspace.style.display = 'none';
+    } else {
+        // Normal file editor mode
+        dashboard.style.display = 'none';
+        workspace.style.display = 'flex';
         initEditor(imageEl.src);
+    }
+
+    // File import triggers
+    cardImport.addEventListener('click', () => filePicker.click());
+    filePicker.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+            loadFile(e.target.files[0]);
+        }
+    });
+
+    // Clipboard Paste trigger click
+    cardPaste.addEventListener('click', () => {
+        vscode.postMessage({ command: 'show-toast', text: 'Press Cmd+V / Ctrl+V to paste your clipboard image.' });
+    });
+
+    // Global Clipboard paste listener
+    document.addEventListener('paste', (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (let item of items) {
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                loadFile(file);
+                return;
+            }
+        }
+    });
+
+    // Global Drag & Drop listeners
+    document.addEventListener('dragover', (e) => e.preventDefault());
+    document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const file = e.dataTransfer.files[0];
+            if (file.type.startsWith('image/')) {
+                loadFile(file);
+            }
+        }
+    });
+
+    function loadFile(file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            lblFilename.textContent = file.name || 'Pasted Image';
+            dashboard.style.display = 'none';
+            workspace.style.display = 'flex';
+            initEditor(event.target.result);
+        };
+        reader.readAsDataURL(file);
     }
 
     function initEditor(src) {
