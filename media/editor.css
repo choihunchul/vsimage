@@ -1,0 +1,260 @@
+:root {
+    --font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --bg-color: var(--vscode-editor-background, #1e1e1e);
+    --fg-color: var(--vscode-editor-foreground, #cccccc);
+    --sidebar-bg: var(--vscode-sideBar-background, #252526);
+    --border-color: var(--vscode-divider, #3c3c3c);
+    --btn-bg: var(--vscode-button-background, #007acc);
+    --btn-fg: var(--vscode-button-foreground, #ffffff);
+    --btn-hover: var(--vscode-button-hoverBackground, #0062a3);
+    --input-bg: var(--vscode-input-background, #3c3c3c);
+    --input-fg: var(--vscode-input-foreground, #cccccc);
+    --input-border: var(--vscode-input-border, #555555);
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color);
+    color: var(--fg-color);
+    font-family: var(--font-family);
+    overflow: hidden;
+}
+
+.editor-wrapper {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+/* Canvas workspace styling with a dark transparency indicator grid */
+.canvas-workspace {
+    flex: 1;
+    background-color: #0d0d0d;
+    background-image: 
+      linear-gradient(45deg, #181818 25%, transparent 25%), 
+      linear-gradient(-45deg, #181818 25%, transparent 25%), 
+      linear-gradient(45deg, transparent 75%, #181818 75%), 
+      linear-gradient(-45deg, transparent 75%, #181818 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.image-container {
+    max-width: 100%;
+    max-height: calc(100% - 60px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+}
+
+/* Glassmorphism floating toolbar */
+.floating-toolbar {
+    position: absolute;
+    bottom: 20px;
+    background: rgba(30, 30, 30, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.tb-btn {
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: background 0.15s;
+}
+
+.tb-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Control sidebar styling */
+.sidebar-controls {
+    width: 320px;
+    background-color: var(--sidebar-bg);
+    border-left: 1px solid var(--border-color);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.section-card {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 16px;
+}
+
+.section-card:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.section-title {
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #858585;
+    margin-bottom: 10px;
+}
+
+.control-group {
+    margin-bottom: 10px;
+}
+
+.control-group label {
+    display: block;
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+    color: #cccccc;
+}
+
+.btn-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+
+.input-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.btn-accent {
+    background-color: var(--btn-bg);
+    color: var(--btn-fg);
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    width: 100%;
+    font-size: 0.85rem;
+    transition: background 0.1s;
+}
+
+.btn-accent:hover {
+    background-color: var(--btn-hover);
+}
+
+.btn-secondary {
+    background-color: #3e3e3e;
+    color: #ffffff;
+    border: none;
+    padding: 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: background 0.15s;
+}
+
+.btn-secondary:hover {
+    background-color: #4e4e4e;
+}
+
+.btn-secondary.active {
+    background-color: var(--btn-bg);
+    font-weight: bold;
+}
+
+.form-control {
+    background-color: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--input-border);
+    padding: 6px;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 0.85rem;
+}
+
+.form-control:focus {
+    border-color: var(--btn-bg);
+    outline: none;
+}
+
+.slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.slider-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--btn-bg);
+}
+
+/* Empty dashboard state */
+.dashboard-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 40px;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.empty-card-container {
+    display: flex;
+    gap: 16px;
+    margin-top: 24px;
+    width: 100%;
+    max-width: 500px;
+}
+
+.empty-card {
+    flex: 1;
+    background-color: var(--sidebar-bg);
+    border: 1px dashed var(--border-color);
+    padding: 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+
+.empty-card:hover {
+    border-color: var(--btn-bg);
+    background: rgba(255, 255, 255, 0.02);
+    transform: translateY(-2px);
+}
+
+.kbd {
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 5px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--btn-bg);
+}

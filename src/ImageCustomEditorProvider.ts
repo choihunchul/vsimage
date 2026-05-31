@@ -87,7 +87,85 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <link href="${styleUri}" rel="stylesheet">
             </head>
             <body>
-                <div id="app" data-image="${imgWebviewUri}"></div>
+                <div class="editor-wrapper">
+                    <!-- Workspace Area -->
+                    <div class="canvas-workspace" id="workspace">
+                        <div class="image-container">
+                            <img id="image" src="${imgWebviewUri}">
+                        </div>
+                        <div class="floating-toolbar" id="toolbar" style="display: none;">
+                            <button class="tb-btn" id="btnZoomIn">Zoom In</button>
+                            <button class="tb-btn" id="btnZoomOut">Zoom Out</button>
+                            <button class="tb-btn" id="btnRotateLeft">Rotate Left</button>
+                            <button class="tb-btn" id="btnRotateRight">Rotate Right</button>
+                            <button class="tb-btn" id="btnReset">Reset</button>
+                        </div>
+                    </div>
+
+                    <!-- Control Panel -->
+                    <div class="sidebar-controls" id="sidebar" style="display: none;">
+                        <div class="section-card">
+                            <div class="section-title">📄 Properties</div>
+                            <div style="font-size: 0.8rem; line-height: 1.5; color: #aaa;">
+                                <div>Name: <span id="lblFilename">Untitled</span></div>
+                                <div>Dimensions: <span id="lblDimensions">0 x 0</span> px</div>
+                            </div>
+                        </div>
+
+                        <div class="section-card">
+                            <div class="section-title">✂️ Crop Presets</div>
+                            <div class="btn-grid" id="cropPresets">
+                                <button class="btn-secondary active" data-ratio="NaN">Free</button>
+                                <button class="btn-secondary" data-ratio="1">1:1</button>
+                                <button class="btn-secondary" data-ratio="1.77777777778">16:9</button>
+                                <button class="btn-secondary" data-ratio="1.33333333333">4:3</button>
+                                <button class="btn-secondary" data-circle="true">Circle</button>
+                            </div>
+                        </div>
+
+                        <div class="section-card">
+                            <div class="section-title">📐 Resize</div>
+                            <div class="control-group">
+                                <div class="input-row">
+                                    <div>
+                                        <label>Width</label>
+                                        <input type="number" id="txtWidth" class="form-control">
+                                    </div>
+                                    <div>
+                                        <label>Height</label>
+                                        <input type="number" id="txtHeight" class="form-control">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
+                                <input type="checkbox" id="chkLockRatio" checked>
+                                <label for="chkLockRatio" style="font-size: 0.75rem; user-select: none;">Lock Aspect Ratio</label>
+                            </div>
+                            <button class="btn-accent" id="btnApplyResize">Apply Resize</button>
+                        </div>
+
+                        <div class="section-card" style="margin-top: auto;">
+                            <div class="section-title">💾 Save & Export</div>
+                            <div class="control-group">
+                                <label>Export Format</label>
+                                <select id="selFormat" class="form-control">
+                                    <option value="image/png">PNG</option>
+                                    <option value="image/jpeg">JPEG</option>
+                                    <option value="image/webp">WebP</option>
+                                </select>
+                            </div>
+                            <div class="control-group" id="qualitySection" style="display: none;">
+                                <label>Quality (<span id="qualityVal">80</span>%)</label>
+                                <div class="slider-row">
+                                    <input type="range" id="rngQuality" min="1" max="100" value="80">
+                                </div>
+                            </div>
+                            <button class="btn-accent" id="btnSave" style="background-color: #28a745; margin-bottom: 8px;">Save</button>
+                            <button class="btn-accent" id="btnExport" style="background-color: #4e4e4e;">Export As...</button>
+                        </div>
+                    </div>
+                </div>
+
                 <script src="${cropperJsUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
