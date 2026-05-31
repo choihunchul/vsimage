@@ -44,6 +44,23 @@
     const cardPaste = document.getElementById('cardPaste');
 
     const contextMenu = document.getElementById('contextMenu');
+    const shortcutOverlay = document.getElementById('shortcutOverlay');
+
+    // Show shortcut cheatsheet while Cmd / Ctrl is held down
+    document.addEventListener('keydown', (e) => {
+        if ((e.key === 'Meta' || e.key === 'Control') && shortcutOverlay) {
+            shortcutOverlay.style.display = 'block';
+        }
+    });
+    document.addEventListener('keyup', (e) => {
+        if ((e.key === 'Meta' || e.key === 'Control') && shortcutOverlay) {
+            shortcutOverlay.style.display = 'none';
+        }
+    });
+    // Also hide if window loses focus (e.g. Cmd+Tab)
+    window.addEventListener('blur', () => {
+        if (shortcutOverlay) shortcutOverlay.style.display = 'none';
+    });
 
     // Mode dispatcher
     if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {

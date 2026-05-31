@@ -282,6 +282,24 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <!-- Floating Eyedropper Tooltip -->
                 <div id="eyedropperTooltip" class="eyedropper-tooltip" style="display: none;">채울 색을 선택해주세요</div>
 
+                <!-- Keyboard Shortcut Cheatsheet Overlay -->
+                <div id="shortcutOverlay" class="shortcut-overlay" style="display: none;">
+                    <div class="shortcut-overlay-title">⌨️ Keyboard Shortcuts</div>
+                    <div class="shortcut-grid">
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + S</span><span class="shortcut-desc">Save</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + Z</span><span class="shortcut-desc">Undo</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + C</span><span class="shortcut-desc">Copy Image</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + A</span><span class="shortcut-desc">Select All</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + 0</span><span class="shortcut-desc">Reset View</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + +</span><span class="shortcut-desc">Zoom In</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + −</span><span class="shortcut-desc">Zoom Out</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">[ / ]</span><span class="shortcut-desc">Rotate Left / Right</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">Enter</span><span class="shortcut-desc">Apply Crop</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">Del / Bksp</span><span class="shortcut-desc">Erase Selection</span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">Esc</span><span class="shortcut-desc">Cancel / Clear</span></div>
+                    </div>
+                </div>
+
                 <script src="${cropperJsUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
