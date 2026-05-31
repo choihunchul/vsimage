@@ -270,6 +270,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     </div>
                 </div>
 
+                <!-- Floating Eyedropper Tooltip -->
+                <div id="eyedropperTooltip" class="eyedropper-tooltip" style="display: none;">채울 색을 선택해주세요</div>
+
                 <script src="${cropperJsUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>

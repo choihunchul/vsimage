@@ -27,6 +27,10 @@
     let initialImageSrc = '';
     let isEyedropperActive = false;
     let eraseTargetBounds = null;
+    let eyedropperCanvas = null;
+    let eyedropperCtx = null;
+    let lastSampledColor = null;
+    const eyedropperTooltip = document.getElementById('eyedropperTooltip');
 
     const lblDimensions = document.getElementById('lblDimensions');
     const lblFilename = document.getElementById('lblFilename');
@@ -427,6 +431,23 @@
     }
 
     // Selection Erase & Eyedropper Color-Fill Engine
+    function endEyedropper() {
+        isEyedropperActive = false;
+        eraseTargetBounds = null;
+        eyedropperCanvas = null;
+        eyedropperCtx = null;
+        lastSampledColor = null;
+        workspace.classList.remove('eyedropper-active');
+        if (eyedropperTooltip) {
+            eyedropperTooltip.style.display = 'none';
+        }
+        const face = document.querySelector('.cropper-face');
+        if (face) {
+            face.style.backgroundColor = 'transparent';
+        }
+    }
+
+    // Selection Erase & Eyedropper Color-Fill Engine
     function eraseSelection() {
         if (!cropper) return;
         if (!chkEnableCrop.checked || !cropper.cropped) {
@@ -438,6 +459,21 @@
         isEyedropperActive = true;
         eraseTargetBounds = data;
         
+        // Cache offscreen representation of the image
+        eyedropperCanvas = document.createElement('canvas');
+        eyedropperCanvas.width = originalWidth;
+        eyedropperCanvas.height = originalHeight;
+        eyedropperCtx = eyedropperCanvas.getContext('2d');
+        eyedropperCtx.drawImage(imageEl, 0, 0);
+
+        lastSampledColor = null;
+
+        if (eyedropperTooltip) {
+            eyedropperTooltip.style.display = 'block';
+            eyedropperTooltip.style.left = '-1000px'; // initially position offscreen to avoid jump
+            eyedropperTooltip.style.top = '-1000px';
+        }
+
         // Set visual cursor classes
         workspace.classList.add('eyedropper-active');
         vscode.postMessage({ 
@@ -445,6 +481,52 @@
             text: 'Eyedropper active. Click on the image to fill with color, or click on the grid to make it transparent.' 
         });
     }
+
+    // Workspace mousemove handler during capture phase to implement Eyedropper real-time live preview and tooltip tracking
+    workspace.addEventListener('mousemove', (e) => {
+        if (!isEyedropperActive || !eraseTargetBounds) return;
+
+        // Position tooltip to follow the cursor (translate offset slightly)
+        if (eyedropperTooltip) {
+            eyedropperTooltip.style.left = `${e.clientX + 12}px`;
+            eyedropperTooltip.style.top = `${e.clientY + 12}px`;
+        }
+
+        const imageData = cropper.getImageData();
+        const rect = cropper.container.getBoundingClientRect();
+        
+        const xInContainer = e.clientX - rect.left;
+        const yInContainer = e.clientY - rect.top;
+        
+        const xInImage = xInContainer - imageData.left;
+        const yInImage = yInContainer - imageData.top;
+
+        const isMouseOnImage = xInImage >= 0 && xInImage <= imageData.width && yInImage >= 0 && yInImage <= imageData.height;
+
+        let color = '';
+        if (isMouseOnImage && eyedropperCtx) {
+            const naturalX = Math.round((xInImage / imageData.width) * imageData.naturalWidth);
+            const naturalY = Math.round((yInImage / imageData.height) * imageData.naturalHeight);
+            
+            const clampedX = Math.max(0, Math.min(originalWidth - 1, naturalX));
+            const clampedY = Math.max(0, Math.min(originalHeight - 1, naturalY));
+
+            const pixel = eyedropperCtx.getImageData(clampedX, clampedY, 1, 1).data;
+            color = `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3] / 255})`;
+        } else {
+            // Outside: translucent white erase transparent preview hint
+            color = 'rgba(255, 255, 255, 0.35)';
+        }
+
+        // DOM Write Guard: Only update style if color changed
+        if (color !== lastSampledColor) {
+            lastSampledColor = color;
+            const face = document.querySelector('.cropper-face');
+            if (face) {
+                face.style.backgroundColor = color;
+            }
+        }
+    }, true);
 
     // Workspace click handler during capture phase to implement Eyedropper sampling
     workspace.addEventListener('click', (e) => {
@@ -477,21 +559,14 @@
         // Draw current image
         ctx.drawImage(imageEl, 0, 0);
 
-        if (isClickOnImage) {
-            // Draw original image on a temporary canvas to sample pixel color
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = originalWidth;
-            tempCanvas.height = originalHeight;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(imageEl, 0, 0);
-
+        if (isClickOnImage && eyedropperCtx) {
             const naturalX = Math.round((xInImage / imageData.width) * imageData.naturalWidth);
             const naturalY = Math.round((yInImage / imageData.height) * imageData.naturalHeight);
             
             const clampedX = Math.max(0, Math.min(originalWidth - 1, naturalX));
             const clampedY = Math.max(0, Math.min(originalHeight - 1, naturalY));
 
-            const pixel = tempCtx.getImageData(clampedX, clampedY, 1, 1).data;
+            const pixel = eyedropperCtx.getImageData(clampedX, clampedY, 1, 1).data;
             const color = `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3] / 255})`;
 
             // Fill target marquee selection with the sampled color
@@ -530,14 +605,12 @@
         initEditor(newSrc);
 
         // Turn off eyedropper mode
-        isEyedropperActive = false;
-        eraseTargetBounds = null;
-        workspace.classList.remove('eyedropper-active');
+        endEyedropper();
 
         // Reset crop mode checkbox
         chkEnableCrop.checked = false;
         syncCropPresetUI();
-    }, true); // Capture phase is critical to intercept clicks over Cropper overlays!
+    }, true); // Capture phase is critical to intercept clicks over Cropper overlays! // Capture phase is critical to intercept clicks over Cropper overlays!
 
     // Custom Context Menu event listeners
     workspace.addEventListener('contextmenu', (e) => {
@@ -709,9 +782,7 @@
         if (e.key === 'Escape') {
             e.preventDefault();
             if (isEyedropperActive) {
-                isEyedropperActive = false;
-                eraseTargetBounds = null;
-                workspace.classList.remove('eyedropper-active');
+                endEyedropper();
                 vscode.postMessage({ command: 'show-toast', text: 'Eyedropper mode cancelled.' });
                 return;
             }

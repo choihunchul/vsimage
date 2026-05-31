@@ -359,5 +359,24 @@ body, html {
     cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1c.9-.9 2.4-.9 3.4 0l1 1"/><path d="M16 11l5-5c.9-.9.9-2.4 0-3.4s-2.4-.9-3.4 0l-5 5"/><path d="m7.5 10.5 6 6"/><path d="m11.5 6.5 6 6"/><path d="m4 16 4-4 4 4-4 4z"/></svg>') 0 22, cell !important;
 }
 
+/* Glassmorphic mouse-tracking tooltip */
+.eyedropper-tooltip {
+    position: absolute;
+    z-index: 10005;
+    pointer-events: none;
+    background: rgba(30, 30, 30, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--vscode-editor-foreground, #cccccc);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    white-space: nowrap;
+    transition: background-color 0.15s ease;
+}
+
 
 
