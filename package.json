@@ -3,7 +3,7 @@
   "displayName": "VS Code Image Editor",
   "description": "Premium image editor to crop, resize, and convert images inside VS Code with clipboard paste.",
   "version": "1.1.0",
-  "publisher": "myside",
+  "publisher": "choihunchul",
   "author": {
     "name": "choihunchul"
   },

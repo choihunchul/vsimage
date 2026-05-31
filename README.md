@@ -35,7 +35,7 @@ Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, r
 
 ## Install
 
-- **VS Code Marketplace:** search for `VS Code Image Editor` (publisher: `myside`)
+- **VS Code Marketplace:** search for `VS Code Image Editor` (publisher: `choihunchul`)
 - **Open VSX:** search for `vsimage` (for VSCodium / compatible editors)
 
 ## Development

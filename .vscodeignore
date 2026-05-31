@@ -11,4 +11,5 @@ tsconfig.json
 **/*.ts
 !dist/**
 .superpowers/**
+scripts/**
 *.vsix
