@@ -34,10 +34,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
         webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, document.uri);
 
-        webviewPanel.webview.onDidReceiveMessage(message => {
+        webviewPanel.webview.onDidReceiveMessage(async message => {
             switch (message.command) {
                 case 'save-image':
                     this.saveImage(document.uri, message.arrayBuffer);
+                    return;
+                case 'export-image':
+                    this.exportImage(message.arrayBuffer, message.mimeType);
                     return;
                 case 'show-toast':
                     vscode.window.showInformationMessage(message.text);
@@ -68,6 +71,22 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
     private saveImage(uri: vscode.Uri, buffer: ArrayBuffer) {
         vscode.workspace.fs.writeFile(uri, new Uint8Array(buffer));
         vscode.window.showInformationMessage('Image saved successfully.');
+    }
+
+    private async exportImage(buffer: ArrayBuffer, mimeType: string) {
+        const extension = mimeType.split('/')[1] || 'png';
+        const options: vscode.SaveDialogOptions = {
+            filters: {
+                'Images': [extension]
+            },
+            saveLabel: 'Export Image'
+        };
+
+        const fileUri = await vscode.window.showSaveDialog(options);
+        if (fileUri) {
+            await vscode.workspace.fs.writeFile(fileUri, new Uint8Array(buffer));
+            vscode.window.showInformationMessage(`Image exported successfully to ${path.basename(fileUri.fsPath)}`);
+        }
     }
 
     private getHtmlForWebview(webview: vscode.Webview, imageUri?: vscode.Uri): string {

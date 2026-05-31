@@ -217,6 +217,38 @@
         }
     });
 
+    // Hook up saving triggers
+    const btnSave = document.getElementById('btnSave');
+    const btnExport = document.getElementById('btnExport');
+
+    btnSave.addEventListener('click', () => triggerSave('save'));
+    btnExport.addEventListener('click', () => triggerSave('export'));
+
+    // Global keyboard listener for Save (Cmd+S / Ctrl+S)
+    document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+            e.preventDefault();
+            triggerSave('save');
+        }
+    });
+
+    function triggerSave(type) {
+        if (window.editorApi && window.editorApi.getCanvasBlob) {
+            window.editorApi.getCanvasBlob((blob) => {
+                if (!blob) return;
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    vscode.postMessage({
+                        command: type === 'save' ? 'save-image' : 'export-image',
+                        arrayBuffer: reader.result,
+                        mimeType: blob.type
+                    });
+                };
+                reader.readAsArrayBuffer(blob);
+            });
+        }
+    }
+
     // Expose variables for save & import protocols
     window.editorApi = {
         initEditor,
