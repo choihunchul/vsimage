@@ -159,6 +159,10 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
                     <!-- Workspace Area -->
                     <div class="canvas-workspace" id="workspace" style="display: none;">
+                        <!-- Rulers -->
+                        <div class="ruler-corner" id="rulerCorner"></div>
+                        <canvas class="ruler ruler-h" id="rulerH"></canvas>
+                        <canvas class="ruler ruler-v" id="rulerV"></canvas>
                         <div class="image-container">
                             <img id="image" ${imgWebviewUri ? `src="${imgWebviewUri}"` : ''}>
                         </div>

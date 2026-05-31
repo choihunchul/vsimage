@@ -45,7 +45,8 @@ body, html {
     align-items: center;
     justify-content: center;
     position: relative;
-    padding: 20px;
+    padding: 20px 20px 20px 44px; /* left = ruler width */
+    padding-top: 24px; /* top = ruler height */
     box-sizing: border-box;
 }
 
@@ -443,4 +444,40 @@ body, html {
     color: var(--vscode-editor-foreground, #cccccc);
     text-align: right;
     flex: 1;
+}
+
+/* ── Rulers ──────────────────────────────────────────────── */
+:root { --ruler-size: 20px; }
+
+.ruler-corner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--ruler-size);
+    height: var(--ruler-size);
+    background: #1a1a1a;
+    border-right: 1px solid #333;
+    border-bottom: 1px solid #333;
+    z-index: 50;
+}
+
+.ruler {
+    position: absolute;
+    z-index: 49;
+    display: block;
+    image-rendering: pixelated;
+}
+
+.ruler-h {
+    top: 0;
+    left: var(--ruler-size);
+    height: var(--ruler-size);
+    width: calc(100% - var(--ruler-size));
+}
+
+.ruler-v {
+    top: var(--ruler-size);
+    left: 0;
+    width: var(--ruler-size);
+    height: calc(100% - var(--ruler-size));
 }
