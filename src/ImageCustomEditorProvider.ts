@@ -157,26 +157,28 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         </div>
                     </div>
 
-                    <!-- Workspace Area -->
+                    <!-- Workspace Area (grid: ruler-corner | rulerH / rulerV | scrollable canvas) -->
                     <div class="canvas-workspace" id="workspace" style="display: none;">
-                        <!-- Rulers -->
                         <div class="ruler-corner" id="rulerCorner"></div>
                         <canvas class="ruler ruler-h" id="rulerH"></canvas>
                         <canvas class="ruler ruler-v" id="rulerV"></canvas>
-                        <div class="image-container">
-                            <img id="image" ${imgWebviewUri ? `src="${imgWebviewUri}"` : ''}>
-                        </div>
-                        <div class="floating-toolbar" id="toolbar" style="display: none;">
-                            <button class="tb-btn" id="btnZoomOut" title="Zoom Out (-)">-</button>
-                            <span class="zoom-indicator" id="lblZoomPercent">--%</span>
-                            <button class="tb-btn" id="btnZoomIn" title="Zoom In (+)">+</button>
-                            <div class="tb-divider"></div>
-                            <button class="tb-btn" id="btnRotateLeft" title="Rotate Left ([)">⟲</button>
-                            <button class="tb-btn" id="btnRotateRight" title="Rotate Right (])">⟳</button>
-                            <button class="tb-btn" id="btnFlipH" title="Flip Horizontal">↔</button>
-                            <button class="tb-btn" id="btnFlipV" title="Flip Vertical">↕</button>
-                            <div class="tb-divider"></div>
-                            <button class="tb-btn" id="btnReset" title="Reset (Ctrl+0)">Reset</button>
+                        <!-- Scrollable canvas viewport -->
+                        <div class="canvas-scroll-area" id="canvasScrollArea">
+                            <div class="image-container">
+                                <img id="image" ${imgWebviewUri ? `src="${imgWebviewUri}"` : ''}>
+                            </div>
+                            <div class="floating-toolbar" id="toolbar" style="display: none;">
+                                <button class="tb-btn" id="btnZoomOut" title="Zoom Out (-)">-</button>
+                                <span class="zoom-indicator" id="lblZoomPercent">--%</span>
+                                <button class="tb-btn" id="btnZoomIn" title="Zoom In (+)">+</button>
+                                <div class="tb-divider"></div>
+                                <button class="tb-btn" id="btnRotateLeft" title="Rotate Left ([)">⟲</button>
+                                <button class="tb-btn" id="btnRotateRight" title="Rotate Right (])">⟳</button>
+                                <button class="tb-btn" id="btnFlipH" title="Flip Horizontal">↔</button>
+                                <button class="tb-btn" id="btnFlipV" title="Flip Vertical">↕</button>
+                                <div class="tb-divider"></div>
+                                <button class="tb-btn" id="btnReset" title="Reset (Ctrl+0)">Reset</button>
+                            </div>
                         </div>
                     </div>
 

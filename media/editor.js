@@ -46,10 +46,43 @@
     const contextMenu = document.getElementById('contextMenu');
     const shortcutOverlay = document.getElementById('shortcutOverlay');
 
-    // Rulers
+    // Rulers & scroll viewport
     const rulerH = document.getElementById('rulerH');
     const rulerV = document.getElementById('rulerV');
+    const canvasScrollArea = document.getElementById('canvasScrollArea');
     const RULER_SIZE = 20; // px — must match CSS --ruler-size
+
+    /** Expand the Cropper.js container to the actual zoomed canvas size so the
+     *  scroll area shows the full image. Called after every zoom/ready event. */
+    function expandContainerToCanvas() {
+        if (!cropper) return;
+        const cd = cropper.getCanvasData();
+        if (!cd || !cd.width) return;
+        const cropperContEl = document.querySelector('.cropper-container');
+        const imgContainerEl = document.querySelector('.image-container');
+        if (!cropperContEl || !imgContainerEl) return;
+
+        const w = Math.ceil(cd.width);
+        const h = Math.ceil(cd.height);
+
+        // Size the cropper container to the canvas
+        cropperContEl.style.width    = w + 'px';
+        cropperContEl.style.height   = h + 'px';
+        cropperContEl.style.overflow = 'visible'; // let canvas show outside box during transitions
+
+        // Resize the image-container wrapper too (drives flex scroll area)
+        imgContainerEl.style.width  = w + 'px';
+        imgContainerEl.style.height = h + 'px';
+
+        // Shift the canvas to (0,0) so the full zoomed image is visible
+        const dx = -cd.left;
+        const dy = -cd.top;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            cropper.move(dx, dy);
+        }
+
+        drawRulers();
+    }
 
     function drawRulers() {
         if (!cropper || !rulerH || !rulerV) return;
@@ -204,7 +237,7 @@
     } else {
         // Normal file editor mode
         dashboard.style.display = 'none';
-        workspace.style.display = 'flex';
+        workspace.style.display = 'grid';
         initEditor(imageEl.src);
     }
 
@@ -250,7 +283,7 @@
         reader.onload = (event) => {
             lblFilename.textContent = file.name || 'Pasted Image';
             dashboard.style.display = 'none';
-            workspace.style.display = 'flex';
+            workspace.style.display = 'grid';
             initEditor(event.target.result);
         };
         reader.readAsDataURL(file);
@@ -295,7 +328,7 @@
                 autoCrop: false, // Clean preview on startup, crop overlay appears only when dragging or selecting presets
                 ready() {
                     updateZoomIndicator();
-                    drawRulers();
+                    expandContainerToCanvas();
                     if (cropper.cropped) {
                         updateResizeInputsFromCrop();
                     }
@@ -313,20 +346,29 @@
                     updateResizeInputsFromCrop();
                 },
                 zoom(event) {
-                    // Update indicator after zoom finishes processing
-                    setTimeout(updateZoomIndicator, 0);
-                    setTimeout(drawRulers, 0);
+                    // Update indicator + expand container after zoom finishes
+                    setTimeout(() => {
+                        updateZoomIndicator();
+                        expandContainerToCanvas();
+                    }, 0);
                 }
             });
 
-            // Redraw rulers while panning (RAF-throttled)
+            // Redraw rulers while panning (RAF-throttled) — listen on scroll area
             let _rulerRafId = null;
-            workspace.addEventListener('mousemove', () => {
-                if (_rulerRafId) return;
-                _rulerRafId = requestAnimationFrame(() => { drawRulers(); _rulerRafId = null; });
-            });
+            if (canvasScrollArea) {
+                canvasScrollArea.addEventListener('mousemove', () => {
+                    if (_rulerRafId) return;
+                    _rulerRafId = requestAnimationFrame(() => { drawRulers(); _rulerRafId = null; });
+                });
+                // Redraw rulers when user scrolls the canvas viewport
+                canvasScrollArea.addEventListener('scroll', () => {
+                    if (_rulerRafId) return;
+                    _rulerRafId = requestAnimationFrame(() => { drawRulers(); _rulerRafId = null; });
+                });
+            }
 
-            // Redraw rulers when workspace is resized
+            // Redraw rulers when workspace grid resizes
             if (!window._rulerResizeObserver && workspace) {
                 window._rulerResizeObserver = new ResizeObserver(() => { setTimeout(drawRulers, 0); });
                 window._rulerResizeObserver.observe(workspace);
