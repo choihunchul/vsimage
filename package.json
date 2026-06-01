@@ -10,12 +10,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hunchulchoi/vsimage.git"
+    "url": "https://github.com/choihunchul/vsimage.git"
   },
   "bugs": {
-    "url": "https://github.com/hunchulchoi/vsimage/issues"
+    "url": "https://github.com/choihunchul/vsimage/issues"
   },
-  "homepage": "https://github.com/hunchulchoi/vsimage#readme",
+  "homepage": "https://github.com/choihunchul/vsimage#readme",
   "keywords": [
     "image",
     "editor",
