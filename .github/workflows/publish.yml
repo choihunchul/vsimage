@@ -52,6 +52,6 @@ jobs:
           ovsx-pat: ${{ secrets.OVSX_PAT }}
           build-command: npm run package
           vsce-package-args: --no-dependencies
-          vsce-publish-args: --no-dependencies
+          vsce-publish-args: --packagePath extension.vsix --no-dependencies
           publish-vscode: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_marketplace }}
           publish-openvsx: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_openvsx }}
