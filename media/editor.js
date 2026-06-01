@@ -1,7 +1,7 @@
 (function() {
     const vscode = acquireVsCodeApi();
-    const isDocumentEditor = !!window.__vsimageDocumentEditor;
-    const l10n = window.__vsimageL10n || {};
+    let isDocumentEditor = false;
+    let l10n = {};
 
     function t(key, replacements) {
         let message = l10n[key] || key;
@@ -25,13 +25,135 @@
             el.title = t(el.getAttribute('data-i18n-title'));
         });
         scope.querySelectorAll('[data-i18n-label]').forEach((el) => {
-            const qualityVal = el.querySelector('#qualityVal');
-            const value = qualityVal ? qualityVal.textContent : '80';
-            el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="qualityVal">${value}</span>%)`;
+            const valueEl = el.querySelector('#qualityVal, #copyQualityVal');
+            const value = valueEl ? valueEl.textContent : '80';
+            const valueId = valueEl ? valueEl.id : 'qualityVal';
+            el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="${valueId}">${value}</span>%)`;
         });
     }
 
-    applyI18n();
+    function usesMacShortcuts() {
+        return /Mac|iPhone|iPod|iPad/i.test(navigator.platform) || navigator.userAgent.includes('Mac');
+    }
+
+    function formatShortcut(spec) {
+        if (!spec) {
+            return '';
+        }
+
+        const mod = usesMacShortcuts() ? '⌘' : 'Ctrl';
+        const alt = usesMacShortcuts() ? '⌥' : 'Alt';
+        return spec
+            .replace(/mod\+/gi, `${mod}+`)
+            .replace(/alt\+/gi, `${alt}+`)
+            .replace(/shift\+/gi, 'Shift+');
+    }
+
+    function applyShortcutHints() {
+        document.querySelectorAll('[data-shortcut]').forEach((el) => {
+            const label = formatShortcut(el.getAttribute('data-shortcut'));
+            const badge = el.querySelector('.context-menu-shortcut, .ui-shortcut-badge');
+            if (badge) {
+                badge.textContent = label;
+            }
+
+            const titleKey = el.getAttribute('data-i18n-title');
+            if (titleKey) {
+                const base = t(titleKey);
+                el.title = label ? `${base} (${label})` : base;
+            }
+        });
+    }
+
+    function setShortcutHintsVisible(visible) {
+        if (visible && shortcutOverlayDismissed) {
+            visible = false;
+        }
+        document.body.classList.toggle('show-shortcut-hints', visible);
+        if (shortcutOverlay) {
+            shortcutOverlay.style.display = visible ? 'block' : 'none';
+        }
+        if (!visible) {
+            hideShortcutHintTooltip();
+        }
+    }
+
+    function updateShortcutHintsFromEvent(e) {
+        const modifiersHeld = !!(e && (e.metaKey || e.ctrlKey));
+        setShortcutHintsVisible(modifiersHeld && !shortcutOverlayDismissed);
+    }
+
+    function dismissShortcutLayers() {
+        shortcutOverlayDismissed = true;
+        setShortcutHintsVisible(false);
+        hideShortcutHintTooltip();
+        if (contextMenu) {
+            contextMenu.style.display = 'none';
+        }
+    }
+
+    function hideShortcutHintTooltip() {
+        if (shortcutHintTooltip) {
+            shortcutHintTooltip.style.display = 'none';
+        }
+    }
+
+    function showShortcutHintTooltip(el, clientX, clientY) {
+        if (!shortcutHintTooltip || !el) {
+            return;
+        }
+
+        const label = formatShortcut(el.getAttribute('data-shortcut'));
+        if (!label) {
+            hideShortcutHintTooltip();
+            return;
+        }
+
+        shortcutHintTooltip.textContent = label;
+        shortcutHintTooltip.style.display = 'block';
+        shortcutHintTooltip.style.left = `${clientX + 14}px`;
+        shortcutHintTooltip.style.top = `${clientY + 14}px`;
+    }
+
+    function bindShortcutHintInteractions() {
+        document.querySelectorAll('[data-shortcut]').forEach((el) => {
+            el.addEventListener('mouseenter', (e) => {
+                showShortcutHintTooltip(el, e.clientX, e.clientY);
+            });
+            el.addEventListener('mousemove', (e) => {
+                if (shortcutHintTooltip && shortcutHintTooltip.style.display === 'block') {
+                    showShortcutHintTooltip(el, e.clientX, e.clientY);
+                }
+            });
+            el.addEventListener('mouseleave', hideShortcutHintTooltip);
+        });
+    }
+
+    async function loadWebviewL10n() {
+        const body = document.body;
+        const enUrl = body.getAttribute('data-l10n-en');
+        if (!enUrl) {
+            return {};
+        }
+
+        const en = await (await fetch(enUrl)).json();
+        const lang = body.dataset.lang || 'en';
+        if (lang === 'en') {
+            return en;
+        }
+
+        const localizedUrl = body.getAttribute(`data-l10n-${lang}`);
+        if (!localizedUrl) {
+            return en;
+        }
+
+        try {
+            const localized = await (await fetch(localizedUrl)).json();
+            return { ...en, ...localized };
+        } catch {
+            return en;
+        }
+    }
     const imageEl = document.getElementById('image');
     const sidebar = document.getElementById('sidebar');
     const toolbar = document.getElementById('toolbar');
@@ -39,6 +161,8 @@
     const txtWidth = document.getElementById('txtWidth');
     const txtHeight = document.getElementById('txtHeight');
     const chkLockRatio = document.getElementById('chkLockRatio');
+    const rngResizeScale = document.getElementById('rngResizeScale');
+    const resizeScaleVal = document.getElementById('resizeScaleVal');
     const btnApplyResize = document.getElementById('btnApplyResize');
     const btnApplyCrop = document.getElementById('btnApplyCrop');
 
@@ -50,17 +174,29 @@
     const chkEnableCrop = document.getElementById('chkEnableCrop');
     const lblZoomPercent = document.getElementById('lblZoomPercent');
 
+    const historyList = document.getElementById('historyList');
+
     let cropper = null;
     let originalWidth = 0;
     let originalHeight = 0;
+    let resizeBaseWidth = 0;
+    let resizeBaseHeight = 0;
     let aspectRatio = 0;
     let isCircular = false;
     let scaleX = 1;
     let scaleY = 1;
-    let undoStack = [];
+    const MAX_HISTORY = 30;
+    let historyStack = [];
     let initialImageSrc = '';
     let isEyedropperActive = false;
     let isColorPickerMode = false;
+    let isMagicWandMode = false;
+    let isApplyingMagicWandSelection = false;
+    let magicWandMask = null;
+    let magicWandBounds = null;
+    let magicWandOverlayEl = null;
+    let magicWandCanvas = null;
+    let magicWandCtx = null;
     let isOptionPressed = false;
     let colorPickerCanvas = null;
     let colorPickerCtx = null;
@@ -70,6 +206,8 @@
     let eyedropperCtx = null;
     let lastSampledColor = null;
     let initialFitRatio = 1;
+    /** Natural-image crop rect; kept in sync on crop changes, not re-read after zoom. */
+    let lastNaturalCropData = null;
     const eyedropperTooltip = document.getElementById('eyedropperTooltip');
     const colorPickerTooltip = document.getElementById('colorPickerTooltip');
     const colorPickerSwatch = document.getElementById('colorPickerSwatch');
@@ -78,7 +216,21 @@
     const colorModalBackdrop = document.getElementById('colorModalBackdrop');
     const colorModalClose = document.getElementById('colorModalClose');
     const colorModalSwatch = document.getElementById('colorModalSwatch');
+    const copyModal = document.getElementById('copyModal');
+    const copyModalBackdrop = document.getElementById('copyModalBackdrop');
+    const copyModalClose = document.getElementById('copyModalClose');
+    const copyFormatOptions = document.getElementById('copyFormatOptions');
+    const copyQualitySection = document.getElementById('copyQualitySection');
+    const rngCopyQuality = document.getElementById('rngCopyQuality');
+    const copyQualityVal = document.getElementById('copyQualityVal');
+    const btnCopyConfirm = document.getElementById('btnCopyConfirm');
+    const copyScopeSection = document.getElementById('copyScopeSection');
+    const chkCopySelectionOnly = document.getElementById('chkCopySelectionOnly');
+    const copyScopeInfo = document.getElementById('copyScopeInfo');
     const colorFormatList = document.getElementById('colorFormatList');
+    const rngMagicWandTolerance = document.getElementById('rngMagicWandTolerance');
+    const magicWandToleranceVal = document.getElementById('magicWandToleranceVal');
+    const btnMagicWand = document.getElementById('btnMagicWand');
 
     const lblDimensions = document.getElementById('lblDimensions');
     const lblFilename = document.getElementById('lblFilename');
@@ -91,6 +243,8 @@
 
     const contextMenu = document.getElementById('contextMenu');
     const shortcutOverlay = document.getElementById('shortcutOverlay');
+    const shortcutHintTooltip = document.getElementById('shortcutHintTooltip');
+    let shortcutOverlayDismissed = false;
 
     function notifyDocumentChanged(labelKey) {
         if (!isDocumentEditor) {
@@ -99,7 +253,88 @@
         vscode.postMessage({ command: 'document-changed', label: t(labelKey) });
     }
 
-    function pushUndoSnapshot() {
+    function trimHistoryStack() {
+        if (historyStack.length > MAX_HISTORY) {
+            historyStack = historyStack.slice(historyStack.length - MAX_HISTORY);
+        }
+    }
+
+    function pushHistorySnapshot(labelKey) {
+        if (!imageEl || !imageEl.src) {
+            return;
+        }
+        historyStack.push({
+            src: imageEl.src,
+            label: labelKey ? t(labelKey) : t('edit.edit')
+        });
+        trimHistoryStack();
+        renderHistoryPanel();
+    }
+
+    function renderHistoryPanel() {
+        if (!historyList || !imageEl) {
+            return;
+        }
+
+        historyList.innerHTML = '';
+
+        const currentBtn = document.createElement('button');
+        currentBtn.type = 'button';
+        currentBtn.className = 'history-item history-item-current';
+        currentBtn.disabled = true;
+        currentBtn.appendChild(createHistoryThumb(imageEl.src));
+        currentBtn.appendChild(createHistoryMeta(t('history.current'), t('history.current')));
+        historyList.appendChild(currentBtn);
+
+        for (let i = historyStack.length - 1; i >= 0; i--) {
+            const entry = historyStack[i];
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'history-item';
+            btn.appendChild(createHistoryThumb(entry.src));
+            btn.appendChild(createHistoryMeta(entry.label, `#${i + 1}`));
+            btn.addEventListener('click', () => restoreHistorySnapshot(i));
+            historyList.appendChild(btn);
+        }
+    }
+
+    function createHistoryThumb(src) {
+        const thumb = document.createElement('img');
+        thumb.className = 'history-thumb';
+        thumb.src = src;
+        thumb.alt = '';
+        thumb.loading = 'lazy';
+        return thumb;
+    }
+
+    function createHistoryMeta(label, step) {
+        const meta = document.createElement('div');
+        meta.className = 'history-meta';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'history-label';
+        labelEl.textContent = label;
+        const stepEl = document.createElement('span');
+        stepEl.className = 'history-step';
+        stepEl.textContent = step;
+        meta.appendChild(labelEl);
+        meta.appendChild(stepEl);
+        return meta;
+    }
+
+    function restoreHistorySnapshot(stackIndex) {
+        if (stackIndex < 0 || stackIndex >= historyStack.length) {
+            return;
+        }
+        const entry = historyStack[stackIndex];
+        historyStack = historyStack.slice(0, stackIndex);
+        initEditor(entry.src);
+        vscode.postMessage({
+            command: 'show-toast',
+            text: t('toast.historyRestored', { label: entry.label })
+        });
+    }
+
+    function pushUndoSnapshot(labelKey) {
         if (!cropper) {
             return;
         }
@@ -134,11 +369,16 @@
             canvas = circleCanvas;
         }
 
-        undoStack.push(canvas.toDataURL());
+        historyStack.push({
+            src: canvas.toDataURL(),
+            label: labelKey ? t(labelKey) : t('edit.edit')
+        });
+        trimHistoryStack();
+        renderHistoryPanel();
     }
 
     function markTransformEdit(labelKey) {
-        pushUndoSnapshot();
+        pushUndoSnapshot(labelKey);
         notifyDocumentChanged(labelKey);
     }
 
@@ -167,12 +407,44 @@
         });
     }
 
-    function revertToSource(src, filename) {
-        undoStack = [];
+    function revertUntitledEditor() {
+        historyStack = [];
+        renderHistoryPanel();
         endEyedropper();
         endColorPickerMode();
         hideColorModal();
         invalidateColorPickerCanvas();
+        invalidateMagicWandCanvas();
+        clearMagicWandMask();
+        endMagicWandMode(false);
+        if (cropper) {
+            cropper.destroy();
+            cropper = null;
+        }
+        clearNaturalCropData();
+        initialImageSrc = null;
+        imageEl.removeAttribute('src');
+        imageEl.src = '';
+        toolbar.style.display = 'none';
+        sidebar.style.display = 'none';
+        dashboard.style.display = 'flex';
+        workspace.style.display = 'none';
+        const untitledName = document.body.dataset.untitledFilename;
+        if (untitledName && lblFilename) {
+            lblFilename.textContent = untitledName;
+        }
+    }
+
+    function revertToSource(src, filename) {
+        historyStack = [];
+        renderHistoryPanel();
+        endEyedropper();
+        endColorPickerMode();
+        hideColorModal();
+        invalidateColorPickerCanvas();
+        invalidateMagicWandCanvas();
+        clearMagicWandMask();
+        endMagicWandMode(false);
         initialImageSrc = src;
         if (filename && lblFilename) {
             lblFilename.textContent = filename;
@@ -190,8 +462,13 @@
             case 'revert-document':
                 revertToSource(message.src, message.filename);
                 break;
+            case 'revert-untitled':
+                revertUntitledEditor();
+                break;
             case 'perform-undo':
                 performUndo({ fromHost: true });
+                break;
+            case 'document-saved':
                 break;
         }
     });
@@ -211,13 +488,13 @@
     let lastPanClientX = 0;
     let lastPanClientY = 0;
 
-    function scheduleExpandContainerToCanvas() {
+    function scheduleSyncLayout() {
         if (expandContainerFrame !== null) {
             cancelAnimationFrame(expandContainerFrame);
         }
         expandContainerFrame = requestAnimationFrame(() => {
             expandContainerFrame = null;
-            expandContainerToCanvas();
+            syncLayoutAfterZoom();
         });
     }
 
@@ -225,18 +502,92 @@
         if (!cropper) {
             return;
         }
-        if (isSpacePressed || isEyedropperActive || isColorPickerMode) {
+        if (isSpacePressed || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             cropper.setDragMode('none');
             return;
         }
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
     }
 
-    function moveCropMarqueeWithArrow(key, shiftKey) {
-        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+    function clampCropBox(x, y, width, height) {
+        const boxWidth = Math.max(1, Math.min(originalWidth, Math.round(width)));
+        const boxHeight = Math.max(1, Math.min(originalHeight, Math.round(height)));
+        const maxX = Math.max(0, originalWidth - boxWidth);
+        const maxY = Math.max(0, originalHeight - boxHeight);
+
+        return {
+            x: Math.max(0, Math.min(maxX, Math.round(x))),
+            y: Math.max(0, Math.min(maxY, Math.round(y))),
+            width: boxWidth,
+            height: boxHeight
+        };
+    }
+
+    function initMarqueeToFullImage() {
+        setMarqueeToFullImage();
+    }
+
+    function setMarqueeToFullImage() {
+        if (!cropper) {
+            return;
+        }
+        if (!cropper.cropped) {
+            cropper.crop();
+        }
+        normalizeCanvasOrigin();
+        const canvas = cropper.getCanvasData();
+        if (!canvas || !canvas.width) {
+            return;
+        }
+        cropper.setCropBoxData({
+            left: canvas.left,
+            top: canvas.top,
+            width: canvas.width,
+            height: canvas.height
+        });
+        updateResizeInputsFromCrop();
+        cacheNaturalCropData();
+    }
+
+    function isCropBoxMatchingCanvas(tolerance = 2) {
+        if (!cropper || !cropper.cropped) {
             return false;
         }
-        if (isSpacePressed || isEyedropperActive || isColorPickerMode) {
+        normalizeCanvasOrigin();
+        const canvas = cropper.getCanvasData();
+        const box = cropper.getCropBoxData();
+        if (!canvas?.width || !box?.width) {
+            return false;
+        }
+        return Math.abs(box.left - canvas.left) <= tolerance
+            && Math.abs(box.top - canvas.top) <= tolerance
+            && Math.abs(box.width - canvas.width) <= tolerance
+            && Math.abs(box.height - canvas.height) <= tolerance;
+    }
+
+    function ensureCropMarqueeForKeyboard() {
+        if (!cropper || !chkEnableCrop.checked) {
+            return false;
+        }
+
+        if (!cropper.cropped) {
+            initMarqueeToFullImage();
+        }
+
+        return cropper.cropped;
+    }
+
+    function focusCropKeyboardTarget() {
+        if (workspace && workspace.style.display !== 'none') {
+            workspace.focus({ preventScroll: true });
+        }
+    }
+
+    function moveCropMarqueeWithArrow(key, shiftKey) {
+        if (!ensureCropMarqueeForKeyboard()) {
+            return false;
+        }
+        if (isSpacePressed || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             return false;
         }
 
@@ -262,97 +613,223 @@
                 return false;
         }
 
-        nextX = Math.max(0, Math.min(originalWidth - data.width, nextX));
-        nextY = Math.max(0, Math.min(originalHeight - data.height, nextY));
-
-        cropper.setData({
-            x: nextX,
-            y: nextY,
-            width: data.width,
-            height: data.height
-        });
+        cropper.setData(clampCropBox(nextX, nextY, data.width, data.height));
         updateResizeInputsFromCrop();
+        cacheNaturalCropData();
+        focusCropKeyboardTarget();
         return true;
     }
 
-    function preserveCropData(callback) {
-        if (!cropper) {
-            return;
+    function resizeCropMarqueeByInset(inset) {
+        if (!ensureCropMarqueeForKeyboard()) {
+            return false;
         }
-        const savedCropData = (chkEnableCrop.checked && cropper.cropped)
-            ? cropper.getData(true)
-            : null;
-        if (typeof callback === 'function') {
-            callback();
+        if (isSpacePressed || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+            return false;
         }
-        if (savedCropData) {
-            cropper.setData(savedCropData);
-            updateResizeInputsFromCrop();
+
+        const data = cropper.getData(true);
+        const nextX = data.x + inset;
+        const nextY = data.y + inset;
+        const nextW = data.width - (inset * 2);
+        const nextH = data.height - (inset * 2);
+
+        if (nextW < 1 || nextH < 1) {
+            return false;
+        }
+
+        const clamped = clampCropBox(nextX, nextY, nextW, nextH);
+        if (clamped.width === data.width
+            && clamped.height === data.height
+            && clamped.x === data.x
+            && clamped.y === data.y) {
+            return false;
+        }
+
+        cropper.setData(clamped);
+        updateResizeInputsFromCrop();
+        cacheNaturalCropData();
+        focusCropKeyboardTarget();
+        return true;
+    }
+
+    function cacheNaturalCropData() {
+        if (cropper && chkEnableCrop.checked && cropper.cropped) {
+            lastNaturalCropData = cropper.getData(true);
         }
     }
 
-    /** Expand the Cropper.js container to the actual zoomed canvas size so the
-     *  scroll area shows the full image. Called after every zoom/ready event. */
-    function expandContainerToCanvas() {
+    function clearNaturalCropData() {
+        lastNaturalCropData = null;
+    }
+
+    function setCropperContainerSize(w, h) {
+        if (!cropper || !cropper.cropper) {
+            return;
+        }
+        const el = cropper.cropper;
+        el.style.width = w + 'px';
+        el.style.height = h + 'px';
+        el.style.overflow = 'visible';
+        cropper.containerData.width = w;
+        cropper.containerData.height = h;
+    }
+
+    function preExpandContainerForSize(targetW, targetH) {
+        if (!cropper) {
+            return;
+        }
+        const cw = cropper.containerData.width;
+        const ch = cropper.containerData.height;
+        if (targetW > cw || targetH > ch) {
+            setCropperContainerSize(
+                Math.max(Math.ceil(targetW), cw),
+                Math.max(Math.ceil(targetH), ch)
+            );
+        }
+    }
+
+    function scaleCropBoxAfterZoom(prevCanvas, prevBox) {
+        if (!cropper || !prevCanvas || !prevBox || !chkEnableCrop.checked || !cropper.cropped) {
+            return;
+        }
+        const canvas = cropper.getCanvasData();
+        if (!canvas.width || !prevCanvas.width) {
+            return;
+        }
+        const factor = canvas.width / prevCanvas.width;
+        if (Math.abs(factor - 1) < 0.0001) {
+            return;
+        }
+        const relLeft = prevBox.left - prevCanvas.left;
+        const relTop = prevBox.top - prevCanvas.top;
+        cropper.setCropBoxData({
+            left: canvas.left + relLeft * factor,
+            top: canvas.top + relTop * factor,
+            width: prevBox.width * factor,
+            height: prevBox.height * factor
+        });
+        cacheNaturalCropData();
+    }
+
+    function normalizeCanvasOrigin() {
+        if (!cropper) {
+            return;
+        }
+        const canvas = cropper.getCanvasData();
+        if (!canvas) {
+            return;
+        }
+        const offsetX = canvas.left;
+        const offsetY = canvas.top;
+        if (Math.abs(offsetX) < 0.5 && Math.abs(offsetY) < 0.5) {
+            return;
+        }
+        const w = canvas.width;
+        const h = canvas.height;
+        const box = cropper.cropped ? cropper.getCropBoxData() : null;
+        cropper.setCanvasData({ left: 0, top: 0, width: w, height: h });
+        if (box) {
+            cropper.setCropBoxData({
+                left: box.left - offsetX,
+                top: box.top - offsetY,
+                width: box.width,
+                height: box.height
+            });
+        }
+    }
+
+    function snapshotCropState() {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            return { canvas: null, box: null };
+        }
+        return {
+            canvas: Object.assign({}, cropper.getCanvasData()),
+            box: Object.assign({}, cropper.getCropBoxData())
+        };
+    }
+
+    /** Keep cropper container, scroll area, and canvas in sync after zoom/rotate. */
+    function syncLayoutAfterZoom() {
         if (!cropper || expandingContainer || isPanning) {
             return;
         }
 
-        const imgData = cropper.getImageData();
-        if (!imgData || !imgData.width) {
+        const canvasData = cropper.getCanvasData();
+        if (!canvasData || !canvasData.width) {
             return;
         }
 
-        const cropperContEl = document.querySelector('.cropper-container');
+        normalizeCanvasOrigin();
+
+        const syncedCanvas = cropper.getCanvasData();
+        const w = Math.ceil(syncedCanvas.width);
+        const h = Math.ceil(syncedCanvas.height);
         const imgContainerEl = imageContainer || document.querySelector('.image-container');
-        if (!cropperContEl || !imgContainerEl || !canvasScrollContent || !canvasScrollArea) {
+        if (!cropper.cropper || !imgContainerEl || !canvasScrollContent || !canvasScrollArea) {
             return;
         }
 
         expandingContainer = true;
-        preserveCropData(() => {
-            try {
-                resetCanvasOrigin();
+        try {
+            setCropperContainerSize(w, h);
 
-                const w = Math.ceil(imgData.width);
-                const h = Math.ceil(imgData.height);
-                const viewportW = canvasScrollArea.clientWidth;
-                const viewportH = canvasScrollArea.clientHeight;
-                const totalW = w + (CANVAS_PADDING * 2);
-                const totalH = h + (CANVAS_PADDING * 2);
-                const contentW = Math.max(viewportW, totalW);
-                const contentH = Math.max(viewportH, totalH);
+            const viewportW = canvasScrollArea.clientWidth;
+            const viewportH = canvasScrollArea.clientHeight;
+            const totalW = w + (CANVAS_PADDING * 2);
+            const totalH = h + (CANVAS_PADDING * 2);
+            const contentW = Math.max(viewportW, totalW);
+            const contentH = Math.max(viewportH, totalH);
 
-                cropperContEl.style.width = w + 'px';
-                cropperContEl.style.height = h + 'px';
-                cropperContEl.style.overflow = 'hidden';
+            imgContainerEl.style.width = w + 'px';
+            imgContainerEl.style.height = h + 'px';
+            imgContainerEl.style.marginLeft = contentW > totalW ? Math.floor((contentW - totalW) / 2) + 'px' : '0';
+            imgContainerEl.style.marginTop = contentH > totalH ? Math.floor((contentH - totalH) / 2) + 'px' : '0';
 
-                imgContainerEl.style.width = w + 'px';
-                imgContainerEl.style.height = h + 'px';
-                imgContainerEl.style.marginLeft = contentW > totalW ? Math.floor((contentW - totalW) / 2) + 'px' : '0';
-                imgContainerEl.style.marginTop = contentH > totalH ? Math.floor((contentH - totalH) / 2) + 'px' : '0';
-
-                canvasScrollContent.style.width = contentW + 'px';
-                canvasScrollContent.style.height = contentH + 'px';
-            } finally {
-                expandingContainer = false;
-            }
-        });
+            canvasScrollContent.style.width = contentW + 'px';
+            canvasScrollContent.style.height = contentH + 'px';
+        } finally {
+            expandingContainer = false;
+        }
 
         drawRulers();
+        renderMagicWandOverlay();
     }
 
-    function resetCanvasOrigin() {
+    function applyZoom(delta) {
         if (!cropper) {
             return;
         }
-        const cd = cropper.getCanvasData();
-        if (!cd) {
+        const snap = snapshotCropState();
+        if (delta > 0 && snap.canvas) {
+            preExpandContainerForSize(
+                snap.canvas.width * (1 + delta),
+                snap.canvas.height * (1 + delta)
+            );
+        }
+        cropper.zoom(delta);
+        scaleCropBoxAfterZoom(snap.canvas, snap.box);
+        syncLayoutAfterZoom();
+    }
+
+    function applyZoomTo(ratio) {
+        if (!cropper) {
             return;
         }
-        if (Math.abs(cd.left) > 0.5 || Math.abs(cd.top) > 0.5) {
-            cropper.move(-cd.left, -cd.top);
+        const snap = snapshotCropState();
+        const cd = snap.canvas || cropper.getCanvasData();
+        if (cd && cd.naturalWidth) {
+            preExpandContainerForSize(cd.naturalWidth * ratio, cd.naturalHeight * ratio);
         }
+        cropper.zoomTo(ratio);
+        if (snap.canvas && snap.box) {
+            scaleCropBoxAfterZoom(snap.canvas, snap.box);
+        } else if (lastNaturalCropData && chkEnableCrop.checked && cropper.cropped) {
+            cropper.setData(lastNaturalCropData);
+            updateResizeInputsFromCrop();
+            cacheNaturalCropData();
+        }
+        syncLayoutAfterZoom();
     }
 
     function drawRulers() {
@@ -484,20 +961,18 @@
         });
     }
 
-    // Show shortcut cheatsheet while Cmd / Ctrl is held down
+    // Show shortcut hints while Cmd / Ctrl is held down
     document.addEventListener('keydown', (e) => {
-        if ((e.key === 'Meta' || e.key === 'Control') && shortcutOverlay) {
-            shortcutOverlay.style.display = 'block';
-        }
+        updateShortcutHintsFromEvent(e);
     });
     document.addEventListener('keyup', (e) => {
-        if ((e.key === 'Meta' || e.key === 'Control') && shortcutOverlay) {
-            shortcutOverlay.style.display = 'none';
+        if (e.key === 'Meta' || e.key === 'Control') {
+            shortcutOverlayDismissed = false;
         }
+        updateShortcutHintsFromEvent(e);
     });
-    // Also hide if window loses focus (e.g. Cmd+Tab)
     window.addEventListener('blur', () => {
-        if (shortcutOverlay) shortcutOverlay.style.display = 'none';
+        setShortcutHintsVisible(false);
     });
 
     // Redraw rulers while panning/scrolling (RAF-throttled) — set up once
@@ -515,6 +990,10 @@
     if (canvasScrollArea) {
         canvasScrollArea.addEventListener('scroll', scheduleRulerRedraw);
 
+        canvasScrollArea.addEventListener('mousedown', () => {
+            focusCropKeyboardTarget();
+        });
+
         canvasScrollArea.addEventListener('wheel', (e) => {
             if (!cropper) {
                 return;
@@ -522,7 +1001,7 @@
 
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
-                cropper.zoom(e.deltaY < 0 ? 0.1 : -0.1);
+                applyZoom(e.deltaY < 0 ? 0.1 : -0.1);
                 return;
             }
 
@@ -570,7 +1049,7 @@
             canvasScrollArea.classList.remove('pan-grabbing');
         }
         if (wasPanning) {
-            scheduleExpandContainerToCanvas();
+            scheduleSyncLayout();
         }
     }
 
@@ -593,14 +1072,14 @@
         isSpacePressed = false;
         endPanning();
         setPanMode(false);
-        scheduleExpandContainerToCanvas();
+        scheduleSyncLayout();
     });
 
     window.addEventListener('blur', () => {
         isSpacePressed = false;
         endPanning();
         setPanMode(false);
-        scheduleExpandContainerToCanvas();
+        scheduleSyncLayout();
     });
 
     function onPanMouseDown(e) {
@@ -613,7 +1092,7 @@
 
         e.preventDefault();
         e.stopPropagation();
-        expandContainerToCanvas();
+        syncLayoutAfterZoom();
         isPanning = true;
         lastPanClientX = e.clientX;
         lastPanClientY = e.clientY;
@@ -657,7 +1136,7 @@
 
     if (workspace) {
         const rulerResizeObserver = new ResizeObserver(() => {
-            scheduleExpandContainerToCanvas();
+            scheduleSyncLayout();
         });
         rulerResizeObserver.observe(workspace);
         if (canvasScrollArea) {
@@ -665,17 +1144,33 @@
         }
     }
 
-    // Mode dispatcher
-    if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
-        // Empty editor launcher mode
-        dashboard.style.display = 'flex';
-        workspace.style.display = 'none';
-    } else {
-        // Normal file editor mode
-        dashboard.style.display = 'none';
-        workspace.style.display = 'grid';
-        initEditor(imageEl.src);
+    function startEditorMode() {
+        if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
+            dashboard.style.display = 'flex';
+            workspace.style.display = 'none';
+        } else {
+            dashboard.style.display = 'none';
+            workspace.style.display = 'grid';
+            initEditor(imageEl.src);
+        }
     }
+
+    async function bootstrap() {
+        try {
+            l10n = await loadWebviewL10n();
+        } catch (err) {
+            console.error('[vsimage] Failed to load translations:', err);
+            l10n = {};
+        }
+
+        isDocumentEditor = document.body.dataset.documentEditor === 'true';
+        applyI18n();
+        applyShortcutHints();
+        bindShortcutHintInteractions();
+        startEditorMode();
+    }
+
+    bootstrap();
 
     // File import triggers
     cardImport.addEventListener('click', () => filePicker.click());
@@ -721,6 +1216,9 @@
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
             initEditor(event.target.result);
+            if (isDocumentEditor) {
+                notifyDocumentChanged('edit.edit');
+            }
         };
         reader.readAsDataURL(file);
     }
@@ -741,7 +1239,7 @@
         const maxFit = getViewportFitRatio();
         let ratio = preferredRatio != null ? preferredRatio : maxFit;
         ratio = Math.min(ratio, maxFit);
-        cropper.zoomTo(ratio);
+        applyZoomTo(ratio);
         initialFitRatio = maxFit;
         updateZoomIndicator();
     }
@@ -751,6 +1249,9 @@
         const afterResize = options && options.afterResize;
         const preserveZoomRatio = options && options.preserveZoomRatio;
         invalidateColorPickerCanvas();
+        invalidateMagicWandCanvas();
+        clearMagicWandMask();
+        endMagicWandMode(false);
         if (!initialImageSrc || preserveInitialSrc) {
             initialImageSrc = src;
         }
@@ -764,17 +1265,18 @@
             scaleY = 1;
 
             lblDimensions.textContent = `${originalWidth} × ${originalHeight}`;
-            txtWidth.value = originalWidth;
-            txtHeight.value = originalHeight;
+            syncResizeInputsToOriginal();
 
             // Show UI panes
             sidebar.style.display = 'flex';
             toolbar.style.display = 'flex';
+            renderHistoryPanel();
 
             // Destroy previous instance
             if (cropper) {
                 cropper.destroy();
             }
+            clearNaturalCropData();
 
             // Uncheck crop checkbox and disable aspect presets visually by default on loading a new image
             chkEnableCrop.checked = false;
@@ -801,14 +1303,14 @@
                         } else {
                             const fitRatio = getViewportFitRatio();
                             if (fitRatio < 1) {
-                                cropper.zoomTo(fitRatio);
+                                applyZoomTo(fitRatio);
                             }
                         }
                     }
                     updateZoomIndicator();
-                    scheduleExpandContainerToCanvas();
+                    scheduleSyncLayout();
                     requestAnimationFrame(() => {
-                        scheduleExpandContainerToCanvas();
+                        scheduleSyncLayout();
                         if (!afterResize) {
                             captureInitialFitRatio();
                         }
@@ -817,11 +1319,16 @@
                     if (cropper.cropped) {
                         updateResizeInputsFromCrop();
                     }
+                    focusCropKeyboardTarget();
                 },
                 cropmove() {
                     updateResizeInputsFromCrop();
+                    cacheNaturalCropData();
                 },
                 crop() {
+                    if (!isApplyingMagicWandSelection) {
+                        clearMagicWandMask();
+                    }
                     if (cropper && cropper.cropped && !chkEnableCrop.checked) {
                         chkEnableCrop.checked = true;
                         syncCropPresetUI();
@@ -830,21 +1337,74 @@
                         if (freeBtn) freeBtn.classList.add('active');
                     }
                     updateResizeInputsFromCrop();
+                    cacheNaturalCropData();
                 },
                 zoom() {
                     updateZoomIndicator();
-                    scheduleExpandContainerToCanvas();
-                    requestAnimationFrame(() => scheduleExpandContainerToCanvas());
+                    requestAnimationFrame(() => {
+                        renderMagicWandOverlay();
+                    });
                 }
             });
         };
     }
 
+    function syncResizeInputsToOriginal() {
+        resizeBaseWidth = originalWidth;
+        resizeBaseHeight = originalHeight;
+        if (txtWidth) {
+            txtWidth.value = originalWidth;
+            txtWidth.placeholder = originalWidth > 0 ? String(originalWidth) : '';
+        }
+        if (txtHeight) {
+            txtHeight.value = originalHeight;
+            txtHeight.placeholder = originalHeight > 0 ? String(originalHeight) : '';
+        }
+        if (rngResizeScale) {
+            rngResizeScale.value = 100;
+        }
+        if (resizeScaleVal) {
+            resizeScaleVal.textContent = '100';
+        }
+    }
+
+    function applyResizeScale(percent) {
+        const scale = percent / 100;
+        txtWidth.value = Math.max(1, Math.round(resizeBaseWidth * scale));
+        txtHeight.value = Math.max(1, Math.round(resizeBaseHeight * scale));
+    }
+
+    function updateResizeScaleFromInputs() {
+        if (!rngResizeScale || resizeBaseWidth <= 0) {
+            return;
+        }
+        const width = parseInt(txtWidth.value, 10);
+        if (!width || width <= 0) {
+            return;
+        }
+        const percent = Math.round((width / resizeBaseWidth) * 100);
+        const clamped = Math.min(200, Math.max(10, percent));
+        rngResizeScale.value = clamped;
+        if (resizeScaleVal) {
+            resizeScaleVal.textContent = String(clamped);
+        }
+    }
+
     function updateResizeInputsFromCrop() {
-        if (!cropper) return;
+        if (!cropper) {
+            return;
+        }
         const data = cropper.getData();
-        txtWidth.value = Math.round(data.width);
-        txtHeight.value = Math.round(data.height);
+        resizeBaseWidth = Math.round(data.width);
+        resizeBaseHeight = Math.round(data.height);
+        txtWidth.value = resizeBaseWidth;
+        txtHeight.value = resizeBaseHeight;
+        if (rngResizeScale) {
+            rngResizeScale.value = 100;
+        }
+        if (resizeScaleVal) {
+            resizeScaleVal.textContent = '100';
+        }
     }
 
     function updateZoomIndicator() {
@@ -879,8 +1439,7 @@
         const currentRatio = data.width / data.naturalWidth;
         const at100Percent = Math.abs(currentRatio - 1) < 0.005;
 
-        cropper.zoomTo(at100Percent ? initialFitRatio : 1);
-        scheduleExpandContainerToCanvas();
+        applyZoomTo(at100Percent ? initialFitRatio : 1);
         updateZoomIndicator();
     }
 
@@ -902,7 +1461,7 @@
     chkEnableCrop.addEventListener('change', () => {
         if (chkEnableCrop.checked) {
             if (cropper) {
-                cropper.crop();
+                initMarqueeToFullImage();
                 // Highlight Free preset by default when crop is checked on
                 presetButtons.forEach(b => b.classList.remove('active'));
                 const freeBtn = document.querySelector('#cropPresets button[data-ratio="NaN"]');
@@ -910,21 +1469,41 @@
                 cropper.setAspectRatio(NaN);
                 isCircular = false;
                 const face = document.querySelector('.cropper-face');
-                if (face) face.style.borderRadius = '0';
+                if (face) {
+                    face.style.borderRadius = '0';
+                    face.style.backgroundColor = 'transparent';
+                }
                 updateResizeInputsFromCrop();
             }
         } else {
             if (cropper) {
                 cropper.clear();
-                // Reset inputs to original dimensions when exiting crop mode
-                txtWidth.value = originalWidth;
-                txtHeight.value = originalHeight;
             }
+            syncResizeInputsToOriginal();
+            clearNaturalCropData();
             isCircular = false;
             presetButtons.forEach(b => b.classList.remove('active'));
         }
         syncCropPresetUI();
     });
+
+    function toggleCropModeWithKey() {
+        if (!cropper) {
+            return;
+        }
+
+        endMagicWandMode(false);
+        endColorPickerMode();
+
+        const turningOn = !chkEnableCrop.checked;
+        chkEnableCrop.checked = turningOn;
+        chkEnableCrop.dispatchEvent(new Event('change'));
+        focusCropKeyboardTarget();
+        vscode.postMessage({
+            command: 'show-toast',
+            text: t(turningOn ? 'toast.cropActive' : 'toast.cropInactive')
+        });
+    }
 
     // Preset Aspect Ratios
     const presetButtons = document.querySelectorAll('#cropPresets button');
@@ -938,6 +1517,11 @@
             presetButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
+            if (btn.dataset.auto === 'true') {
+                autoCropToContent();
+                return;
+            }
+
             if (cropper) {
                 cropper.crop();
             }
@@ -947,12 +1531,17 @@
             if (isCircular) {
                 // Circle cropping uses 1:1 aspect ratio constraint visually
                 cropper.setAspectRatio(1);
-                // Apply circle mask preview to crop box
                 const face = document.querySelector('.cropper-face');
-                if (face) face.style.borderRadius = '50%';
+                if (face) {
+                    face.style.borderRadius = '50%';
+                    face.style.backgroundColor = 'transparent';
+                }
             } else {
                 const face = document.querySelector('.cropper-face');
-                if (face) face.style.borderRadius = '0';
+                if (face) {
+                    face.style.borderRadius = '0';
+                    face.style.backgroundColor = 'transparent';
+                }
                 
                 const ratio = parseFloat(btn.dataset.ratio);
                 cropper.setAspectRatio(isNaN(ratio) ? NaN : ratio);
@@ -960,42 +1549,262 @@
         });
     });
 
+    const CONTENT_ALPHA_THRESHOLD = 12;
+
+    function resetCropFaceStyles() {
+        const face = document.querySelector('.cropper-face');
+        if (face) {
+            face.style.borderRadius = '0';
+            face.style.backgroundColor = 'transparent';
+        }
+    }
+
+    function getContentBoundsFromRegion(regionX, regionY, regionW, regionH, useCircle) {
+        if (!ensureMagicWandCanvas()) {
+            return null;
+        }
+
+        const x0 = Math.max(0, Math.round(regionX));
+        const y0 = Math.max(0, Math.round(regionY));
+        const w = Math.min(originalWidth - x0, Math.round(regionW));
+        const h = Math.min(originalHeight - y0, Math.round(regionH));
+
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+
+        const pixels = magicWandCtx.getImageData(x0, y0, w, h).data;
+        const centerX = w / 2;
+        const centerY = h / 2;
+        const circleRadius = Math.min(w, h) / 2;
+        let minX = w;
+        let minY = h;
+        let maxX = -1;
+        let maxY = -1;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (useCircle) {
+                    const dx = x + 0.5 - centerX;
+                    const dy = y + 0.5 - centerY;
+                    if ((dx * dx) + (dy * dy) > circleRadius * circleRadius) {
+                        continue;
+                    }
+                }
+
+                const alpha = pixels[((y * w) + x) * 4 + 3];
+                if (alpha <= CONTENT_ALPHA_THRESHOLD) {
+                    continue;
+                }
+
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+        }
+
+        if (maxX < 0) {
+            return null;
+        }
+
+        return {
+            x: x0 + minX,
+            y: y0 + minY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1
+        };
+    }
+
+    function applyCropBounds(bounds) {
+        clearMagicWandMask();
+        cropper.setData(bounds);
+        updateResizeInputsFromCrop();
+        cacheNaturalCropData();
+    }
+
+    function autoCropToContent() {
+        if (!cropper) {
+            return false;
+        }
+
+        if (!chkEnableCrop.checked) {
+            chkEnableCrop.checked = true;
+            syncCropPresetUI();
+        }
+
+        isCircular = false;
+        cropper.crop();
+        cropper.setAspectRatio(NaN);
+        resetCropFaceStyles();
+
+        const bounds = getContentBoundsFromRegion(0, 0, originalWidth, originalHeight, false);
+        if (!bounds) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropEmpty') });
+            return false;
+        }
+
+        applyCropBounds(bounds);
+        vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropDone') });
+        return true;
+    }
+
+    function isPointInCropSelection(point) {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            return false;
+        }
+
+        const data = cropper.getData(true);
+        return point.x >= data.x
+            && point.x < data.x + data.width
+            && point.y >= data.y
+            && point.y < data.y + data.height;
+    }
+
+    function isMarqueeFullImage() {
+        return isCropBoxMatchingCanvas();
+    }
+
+    function expandCropSelectionToFullImage() {
+        if (!cropper || !chkEnableCrop.checked) {
+            return false;
+        }
+        if (isMarqueeFullImage()) {
+            return false;
+        }
+        setMarqueeToFullImage();
+        if (!isMarqueeFullImage()) {
+            return false;
+        }
+        presetButtons.forEach(b => b.classList.remove('active'));
+        const freeBtn = document.querySelector('#cropPresets button[data-ratio="NaN"]');
+        if (freeBtn) {
+            freeBtn.classList.add('active');
+        }
+        cropper.setAspectRatio(NaN);
+        isCircular = false;
+        resetCropFaceStyles();
+        vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropFull') });
+        return true;
+    }
+
+    function toggleCropMarqueeFullContent() {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            return false;
+        }
+
+        if (isMarqueeFullImage()) {
+            return trimCropSelectionToContent();
+        }
+
+        return expandCropSelectionToFullImage();
+    }
+
+    function trimCropSelectionToContent() {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            return false;
+        }
+
+        const cropData = cropper.getData(true);
+        const regionX = Math.max(0, Math.round(cropData.x));
+        const regionY = Math.max(0, Math.round(cropData.y));
+        const regionW = Math.min(originalWidth - regionX, Math.round(cropData.width));
+        const regionH = Math.min(originalHeight - regionY, Math.round(cropData.height));
+
+        if (regionW <= 0 || regionH <= 0) {
+            return false;
+        }
+
+        const bounds = getContentBoundsFromRegion(regionX, regionY, regionW, regionH, isCircular);
+        if (!bounds) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropEmpty') });
+            return false;
+        }
+
+        if (bounds.x === regionX && bounds.y === regionY && bounds.width === regionW && bounds.height === regionH) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropNoChange') });
+            return false;
+        }
+
+        applyCropBounds(bounds);
+        vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropDone') });
+        return true;
+    }
+
+    function onCropMarqueeDblClick(e) {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            return;
+        }
+        if (isEyedropperActive || isMagicWandMode || isColorPickerMode || isSpacePressed) {
+            return;
+        }
+        if (!canvasScrollArea || !canvasScrollArea.contains(e.target)) {
+            return;
+        }
+        if (e.target.closest('.floating-toolbar') || e.target.closest('.color-modal') || e.target.closest('.copy-modal')) {
+            return;
+        }
+
+        const point = getImagePointFromEvent(e);
+        if (!point || !isPointInCropSelection(point)) {
+            return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+        toggleCropMarqueeFullContent();
+    }
+
+    workspace.addEventListener('dblclick', onCropMarqueeDblClick, true);
+
     // Aspect Ratio Lock and Dimension synchronization
     txtWidth.addEventListener('input', () => {
         if (chkLockRatio.checked && aspectRatio) {
             txtHeight.value = Math.round(txtWidth.value / aspectRatio);
         }
+        updateResizeScaleFromInputs();
     });
 
     txtHeight.addEventListener('input', () => {
         if (chkLockRatio.checked && aspectRatio) {
             txtWidth.value = Math.round(txtHeight.value * aspectRatio);
         }
+        updateResizeScaleFromInputs();
     });
+
+    if (rngResizeScale) {
+        rngResizeScale.addEventListener('input', () => {
+            const percent = parseInt(rngResizeScale.value, 10);
+            if (resizeScaleVal) {
+                resizeScaleVal.textContent = rngResizeScale.value;
+            }
+            applyResizeScale(percent);
+        });
+    }
 
     // Toolbar zoom / rotate
     document.getElementById('btnZoomIn').addEventListener('click', () => {
         if (cropper) {
-            cropper.zoom(0.1);
+            applyZoom(0.1);
         }
     });
     document.getElementById('btnZoomOut').addEventListener('click', () => {
         if (cropper) {
-            cropper.zoom(-0.1);
+            applyZoom(-0.1);
         }
     });
     document.getElementById('btnRotateLeft').addEventListener('click', () => {
         if (cropper) {
             markTransformEdit('edit.rotate');
             cropper.rotate(-90);
-            scheduleExpandContainerToCanvas();
+            scheduleSyncLayout();
         }
     });
     document.getElementById('btnRotateRight').addEventListener('click', () => {
         if (cropper) {
             markTransformEdit('edit.rotate');
             cropper.rotate(90);
-            scheduleExpandContainerToCanvas();
+            scheduleSyncLayout();
         }
     });
     document.getElementById('btnFlipH').addEventListener('click', () => {
@@ -1036,8 +1845,7 @@
         const targetWidth = parseInt(txtWidth.value, 10);
         const targetHeight = parseInt(txtHeight.value, 10);
         if (targetWidth > 0 && targetHeight > 0) {
-            // Push current source to undo stack before mutation
-            undoStack.push(imageEl.src);
+            pushHistorySnapshot('edit.resize');
 
             // If crop mode is NOT enabled, select the entire image bounds to get a clean full-image resize!
             if (!chkEnableCrop.checked) {
@@ -1089,15 +1897,16 @@
     // Apply 1:1 original crop selections (destructively crops on screen keeping original selection pixels scale)
     btnApplyCrop.addEventListener('click', () => {
         if (!cropper) return;
+        if (magicWandMask && magicWandBounds) {
+            applyMagicWandCrop();
+            return;
+        }
         if (!chkEnableCrop.checked || !cropper.cropped) {
             vscode.postMessage({ command: 'show-toast', text: t('toast.cropSelectFirst') });
             return;
         }
 
-        // Push current source to undo stack before mutation
-        undoStack.push(imageEl.src);
-
-        // Get cropped canvas at original selection pixel bounds
+        pushHistorySnapshot('edit.crop');
         let canvas = cropper.getCroppedCanvas({
             imageSmoothingEnabled: true,
             imageSmoothingQuality: 'high'
@@ -1135,26 +1944,179 @@
     btnSave.addEventListener('click', () => triggerSave('save'));
     btnExport.addEventListener('click', () => triggerSave('export'));
 
-    // Clipboard Copy Engine
-    function copyImageToClipboard() {
-        if (!cropper) return;
-        
+    const COPY_FORMAT_STORAGE_KEY = 'vsimage.copyFormat';
+    const COPY_QUALITY_STORAGE_KEY = 'vsimage.copyQuality';
+    const COPY_SCOPE_STORAGE_KEY = 'vsimage.copyScopeSelection';
+    let selectedCopyFormat = 'image/png';
+
+    function hasActiveCopySelection() {
+        return !!(cropper && chkEnableCrop.checked && cropper.cropped);
+    }
+
+    function updateCopyScopeUI() {
+        const hasSelection = hasActiveCopySelection();
+        if (copyScopeSection) {
+            copyScopeSection.style.display = hasSelection ? 'block' : 'none';
+        }
+        if (!hasSelection || !copyScopeInfo) {
+            return;
+        }
+
+        const data = cropper.getData(true);
+        const width = Math.round(data.width);
+        const height = Math.round(data.height);
+        copyScopeInfo.textContent = t('copyModal.selectionSize', {
+            width: String(width),
+            height: String(height)
+        });
+    }
+
+    function getCopyFormatLabel(mimeType) {
+        switch (mimeType) {
+            case 'image/jpeg':
+                return t('copyModal.formatJpeg');
+            case 'image/webp':
+                return t('copyModal.formatWebp');
+            default:
+                return t('copyModal.formatPng');
+        }
+    }
+
+    function syncCopyQualityVisibility() {
+        if (!copyQualitySection) {
+            return;
+        }
+        const showQuality = selectedCopyFormat === 'image/jpeg' || selectedCopyFormat === 'image/webp';
+        copyQualitySection.style.display = showQuality ? 'block' : 'none';
+    }
+
+    function setSelectedCopyFormat(format) {
+        selectedCopyFormat = format;
+        if (copyFormatOptions) {
+            copyFormatOptions.querySelectorAll('.copy-format-btn').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.format === format);
+            });
+        }
+        syncCopyQualityVisibility();
+    }
+
+    function hideCopyModal() {
+        if (copyModal) {
+            copyModal.style.display = 'none';
+        }
+    }
+
+    function showCopyModal() {
+        if (!copyModal || !cropper) {
+            return;
+        }
+
+        const savedFormat = sessionStorage.getItem(COPY_FORMAT_STORAGE_KEY) || 'image/png';
+        setSelectedCopyFormat(savedFormat);
+
+        const savedQuality = sessionStorage.getItem(COPY_QUALITY_STORAGE_KEY);
+        const quality = savedQuality ? parseInt(savedQuality, 10) : parseInt(rngQuality.value, 10);
+        if (rngCopyQuality) {
+            rngCopyQuality.value = String(quality);
+        }
+        if (copyQualityVal) {
+            copyQualityVal.textContent = String(quality);
+        }
+
+        if (chkCopySelectionOnly) {
+            const savedScope = sessionStorage.getItem(COPY_SCOPE_STORAGE_KEY);
+            chkCopySelectionOnly.checked = hasActiveCopySelection()
+                ? savedScope !== 'full'
+                : false;
+        }
+        updateCopyScopeUI();
+
+        copyModal.style.display = 'flex';
+        if (btnCopyConfirm) {
+            btnCopyConfirm.focus();
+        }
+    }
+
+    function performCopyToClipboard(format, qualityPercent, selectionOnly) {
+        if (!cropper) {
+            return;
+        }
+
+        const quality = qualityPercent / 100;
+        const useSelection = !!(selectionOnly && hasActiveCopySelection());
+        sessionStorage.setItem(COPY_FORMAT_STORAGE_KEY, format);
+        sessionStorage.setItem(COPY_QUALITY_STORAGE_KEY, String(qualityPercent));
+        sessionStorage.setItem(COPY_SCOPE_STORAGE_KEY, useSelection ? 'selection' : 'full');
+
         window.editorApi.getCanvasBlob((blob) => {
             if (!blob) {
                 vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
                 return;
             }
-            
+
             navigator.clipboard.write([
                 new ClipboardItem({
                     [blob.type]: blob
                 })
             ]).then(() => {
-                vscode.postMessage({ command: 'show-toast', text: t('toast.imageCopied') });
+                hideCopyModal();
+                let toastText = t('toast.imageCopiedAs', { format: getCopyFormatLabel(format) });
+                if (useSelection) {
+                    const data = cropper.getData(true);
+                    toastText = t('toast.imageCopiedSelection', {
+                        format: getCopyFormatLabel(format),
+                        width: String(Math.round(data.width)),
+                        height: String(Math.round(data.height))
+                    });
+                }
+                vscode.postMessage({ command: 'show-toast', text: toastText });
             }).catch((err) => {
                 vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardFailed', { error: String(err) }) });
             });
+        }, { format, quality, copySelectionOnly: useSelection });
+    }
+
+    function confirmCopyToClipboard() {
+        const qualityPercent = rngCopyQuality
+            ? parseInt(rngCopyQuality.value, 10)
+            : parseInt(rngQuality.value, 10);
+        const selectionOnly = chkCopySelectionOnly ? chkCopySelectionOnly.checked : false;
+        performCopyToClipboard(selectedCopyFormat, qualityPercent, selectionOnly);
+    }
+
+    // Clipboard Copy Engine
+    function copyImageToClipboard() {
+        if (!cropper) {
+            return;
+        }
+        showCopyModal();
+    }
+
+    if (copyFormatOptions) {
+        copyFormatOptions.addEventListener('click', (e) => {
+            const btn = e.target.closest('.copy-format-btn');
+            if (!btn || !btn.dataset.format) {
+                return;
+            }
+            setSelectedCopyFormat(btn.dataset.format);
         });
+    }
+
+    if (rngCopyQuality && copyQualityVal) {
+        rngCopyQuality.addEventListener('input', () => {
+            copyQualityVal.textContent = rngCopyQuality.value;
+        });
+    }
+
+    if (btnCopyConfirm) {
+        btnCopyConfirm.addEventListener('click', confirmCopyToClipboard);
+    }
+
+    if (copyModalClose) {
+        copyModalClose.addEventListener('click', hideCopyModal);
+    }
+    if (copyModalBackdrop) {
+        copyModalBackdrop.addEventListener('click', hideCopyModal);
     }
 
     // ── Color Picker (Option/Alt key) ──────────────────────────────────────
@@ -1312,6 +2274,9 @@
 
     function startColorPickerMode() {
         if (!cropper || isEyedropperActive || !isPanTargetVisible()) {
+            return;
+        }
+        if (isMagicWandMode) {
             return;
         }
         if (isColorPickerMode) {
@@ -1528,6 +2493,351 @@
         }
     }
 
+    // ── Magic Wand (W key) ───────────────────────────────────────────────
+
+    function invalidateMagicWandCanvas() {
+        magicWandCanvas = null;
+        magicWandCtx = null;
+    }
+
+    function ensureMagicWandCanvas() {
+        if (!imageEl || !originalWidth || !originalHeight) {
+            return false;
+        }
+        if (!magicWandCanvas) {
+            magicWandCanvas = document.createElement('canvas');
+            magicWandCanvas.width = originalWidth;
+            magicWandCanvas.height = originalHeight;
+            magicWandCtx = magicWandCanvas.getContext('2d', { willReadFrequently: true });
+            magicWandCtx.drawImage(imageEl, 0, 0);
+        }
+        return true;
+    }
+
+    function clearMagicWandMask() {
+        magicWandMask = null;
+        magicWandBounds = null;
+        if (magicWandOverlayEl) {
+            magicWandOverlayEl.remove();
+            magicWandOverlayEl = null;
+        }
+    }
+
+    function getMagicWandTolerance() {
+        if (!rngMagicWandTolerance) {
+            return 32;
+        }
+        return parseInt(rngMagicWandTolerance.value, 10) || 0;
+    }
+
+    function floodFillMagicWand(startX, startY, tolerance) {
+        if (!ensureMagicWandCanvas()) {
+            return null;
+        }
+
+        const w = originalWidth;
+        const h = originalHeight;
+        const pixels = magicWandCtx.getImageData(0, 0, w, h).data;
+        const startIdx = startY * w + startX;
+        const seed = startIdx * 4;
+        const r0 = pixels[seed];
+        const g0 = pixels[seed + 1];
+        const b0 = pixels[seed + 2];
+        const a0 = pixels[seed + 3];
+
+        function matches(idx) {
+            const i = idx * 4;
+            return Math.abs(pixels[i] - r0) <= tolerance
+                && Math.abs(pixels[i + 1] - g0) <= tolerance
+                && Math.abs(pixels[i + 2] - b0) <= tolerance
+                && Math.abs(pixels[i + 3] - a0) <= tolerance;
+        }
+
+        const mask = new Uint8Array(w * h);
+        const visited = new Uint8Array(w * h);
+        const stack = [startX, startY];
+        let count = 0;
+        let minX = w;
+        let minY = h;
+        let maxX = -1;
+        let maxY = -1;
+
+        while (stack.length) {
+            const y = stack.pop();
+            const x = stack.pop();
+            const idx = y * w + x;
+            if (x < 0 || x >= w || y < 0 || y >= h || visited[idx]) {
+                continue;
+            }
+            if (!matches(idx)) {
+                continue;
+            }
+
+            visited[idx] = 1;
+            mask[idx] = 1;
+            count++;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+
+            stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+        }
+
+        if (count === 0) {
+            return null;
+        }
+
+        return {
+            mask,
+            count,
+            bounds: {
+                x: minX,
+                y: minY,
+                width: maxX - minX + 1,
+                height: maxY - minY + 1
+            }
+        };
+    }
+
+    function ensureMagicWandOverlay() {
+        if (!cropper) {
+            return null;
+        }
+        if (!magicWandOverlayEl) {
+            magicWandOverlayEl = document.createElement('canvas');
+            magicWandOverlayEl.className = 'magic-wand-overlay';
+            cropper.container.appendChild(magicWandOverlayEl);
+        }
+        return magicWandOverlayEl;
+    }
+
+    function renderMagicWandOverlay() {
+        if (!magicWandMask || !cropper) {
+            if (magicWandOverlayEl) {
+                magicWandOverlayEl.style.display = 'none';
+            }
+            return;
+        }
+
+        const overlay = ensureMagicWandOverlay();
+        const imgData = cropper.getImageData();
+        if (!imgData || !imgData.width) {
+            return;
+        }
+
+        overlay.width = Math.max(1, Math.ceil(imgData.width));
+        overlay.height = Math.max(1, Math.ceil(imgData.height));
+        overlay.style.width = `${imgData.width}px`;
+        overlay.style.height = `${imgData.height}px`;
+        overlay.style.left = `${imgData.left}px`;
+        overlay.style.top = `${imgData.top}px`;
+        overlay.style.display = 'block';
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = originalWidth;
+        maskCanvas.height = originalHeight;
+        const maskCtx = maskCanvas.getContext('2d');
+        const highlight = maskCtx.createImageData(originalWidth, originalHeight);
+        for (let i = 0; i < magicWandMask.length; i++) {
+            if (magicWandMask[i]) {
+                const j = i * 4;
+                highlight.data[j] = 0;
+                highlight.data[j + 1] = 120;
+                highlight.data[j + 2] = 215;
+                highlight.data[j + 3] = 90;
+            }
+        }
+        maskCtx.putImageData(highlight, 0, 0);
+
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        ctx.drawImage(maskCanvas, 0, 0, overlay.width, overlay.height);
+    }
+
+    function applyMagicWandMaskToCanvas(canvas, bounds) {
+        if (!magicWandMask || !bounds || !canvas) {
+            return canvas;
+        }
+
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+        const fullW = originalWidth;
+
+        for (let y = 0; y < bounds.height; y++) {
+            for (let x = 0; x < bounds.width; x++) {
+                const maskIdx = (bounds.y + y) * fullW + (bounds.x + x);
+                if (!magicWandMask[maskIdx]) {
+                    const i = (y * bounds.width + x) * 4;
+                    data[i + 3] = 0;
+                }
+            }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+        return canvas;
+    }
+
+    function applyMagicWandSelection(result) {
+        magicWandMask = result.mask;
+        magicWandBounds = result.bounds;
+
+        if (!chkEnableCrop.checked) {
+            chkEnableCrop.checked = true;
+            syncCropPresetUI();
+        }
+
+        isApplyingMagicWandSelection = true;
+        cropper.crop();
+        cropper.setData({
+            x: result.bounds.x,
+            y: result.bounds.y,
+            width: result.bounds.width,
+            height: result.bounds.height
+        });
+        isApplyingMagicWandSelection = false;
+        cacheNaturalCropData();
+
+        presetButtons.forEach(b => b.classList.remove('active'));
+        const freeBtn = document.querySelector('#cropPresets button[data-ratio="NaN"]');
+        if (freeBtn) {
+            freeBtn.classList.add('active');
+        }
+
+        updateResizeInputsFromCrop();
+        renderMagicWandOverlay();
+        notifyDocumentChanged('edit.magicWandSelect');
+        vscode.postMessage({
+            command: 'show-toast',
+            text: t('toast.magicWandSelected', { count: result.count })
+        });
+    }
+
+    function endMagicWandMode(showToast) {
+        if (!isMagicWandMode) {
+            return;
+        }
+
+        isMagicWandMode = false;
+        workspace.classList.remove('magic-wand-active');
+        if (btnMagicWand) {
+            btnMagicWand.classList.remove('active');
+        }
+        updateCropInteraction();
+
+        if (showToast) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.magicWandInactive') });
+        }
+    }
+
+    function toggleMagicWandMode(forceState) {
+        const next = forceState !== undefined ? forceState : !isMagicWandMode;
+        if (next === isMagicWandMode) {
+            return;
+        }
+
+        if (next) {
+            if (!cropper) {
+                return;
+            }
+            endColorPickerMode();
+            endEyedropper();
+            isMagicWandMode = true;
+            workspace.classList.add('magic-wand-active');
+            if (btnMagicWand) {
+                btnMagicWand.classList.add('active');
+            }
+            updateCropInteraction();
+            vscode.postMessage({ command: 'show-toast', text: t('toast.magicWandActive') });
+            return;
+        }
+
+        endMagicWandMode(true);
+    }
+
+    function onMagicWandClick(e) {
+        if (!isMagicWandMode || e.button !== 0) {
+            return;
+        }
+        if (!canvasScrollArea || !canvasScrollArea.contains(e.target)) {
+            return;
+        }
+        if (e.target.closest('.floating-toolbar') || e.target.closest('.color-modal')) {
+            return;
+        }
+
+        const point = getImagePointFromEvent(e);
+        if (!point) {
+            return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const result = floodFillMagicWand(point.x, point.y, getMagicWandTolerance());
+        if (!result) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.magicWandNoSelection') });
+            return;
+        }
+
+        applyMagicWandSelection(result);
+    }
+
+    function eraseMagicWandSelection() {
+        if (!magicWandMask) {
+            return;
+        }
+
+        pushHistorySnapshot('edit.eraseSelection');
+        const data = imgData.data;
+        for (let i = 0; i < magicWandMask.length; i++) {
+            if (magicWandMask[i]) {
+                data[i * 4 + 3] = 0;
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        const newSrc = canvas.toDataURL();
+        initEditor(newSrc);
+        notifyDocumentChanged('edit.eraseSelection');
+        vscode.postMessage({ command: 'show-toast', text: t('toast.selectionErased') });
+    }
+
+    function applyMagicWandCrop() {
+        if (!cropper || !magicWandMask || !magicWandBounds) {
+            return;
+        }
+
+        pushHistorySnapshot('edit.crop');
+
+        let canvas = cropper.getCroppedCanvas({
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high'
+        });
+        canvas = applyMagicWandMaskToCanvas(canvas, magicWandBounds);
+
+        const newSrc = canvas.toDataURL();
+        initEditor(newSrc);
+
+        chkEnableCrop.checked = false;
+        syncCropPresetUI();
+        notifyDocumentChanged('edit.crop');
+        vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
+    }
+
+    if (rngMagicWandTolerance && magicWandToleranceVal) {
+        rngMagicWandTolerance.addEventListener('input', () => {
+            magicWandToleranceVal.textContent = rngMagicWandTolerance.value;
+        });
+    }
+
+    if (btnMagicWand) {
+        btnMagicWand.addEventListener('click', () => toggleMagicWandMode());
+    }
+
+    workspace.addEventListener('click', onMagicWandClick, true);
+
     // Selection Erase & Eyedropper Color-Fill Engine
     function eraseSelection() {
         if (!cropper) return;
@@ -1535,6 +2845,9 @@
             vscode.postMessage({ command: 'show-toast', text: t('toast.eraseSelectFirst') });
             return;
         }
+
+        clearMagicWandMask();
+        endMagicWandMode(false);
 
         const data = cropper.getData();
         isEyedropperActive = true;
@@ -1630,8 +2943,7 @@
         // Check if the click lies inside the actual responsive boundary of the image
         const isClickOnImage = xInImage >= 0 && xInImage <= imageData.width && yInImage >= 0 && yInImage <= imageData.height;
 
-        // Backup current source to undo stack before erase/fill mutation
-        undoStack.push(imageEl.src);
+        pushHistorySnapshot(isClickOnImage ? 'edit.fillSelection' : 'edit.eraseSelection');
 
         const canvas = document.createElement('canvas');
         canvas.width = originalWidth;
@@ -1706,9 +3018,21 @@
         contextMenu.style.display = 'block';
     });
 
-    // Close menu when clicking elsewhere
+    // Close shortcut overlay / context menu when clicking on the canvas or elsewhere
+    document.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.context-menu')
+            || e.target.closest('.color-modal-panel')
+            || e.target.closest('.copy-modal')) {
+            return;
+        }
+        dismissShortcutLayers();
+    }, true);
+
+    // Close context menu on click (legacy fallback)
     document.addEventListener('click', () => {
-        contextMenu.style.display = 'none';
+        if (contextMenu) {
+            contextMenu.style.display = 'none';
+        }
     });
 
     document.getElementById('ctxCopy').addEventListener('click', (e) => {
@@ -1820,10 +3144,27 @@
 
         // Selection Erase: Delete / Backspace
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            if (chkEnableCrop.checked && cropper && cropper.cropped) {
+            if (magicWandMask) {
+                e.preventDefault();
+                eraseMagicWandSelection();
+            } else if (chkEnableCrop.checked && cropper && cropper.cropped) {
                 e.preventDefault();
                 eraseSelection();
             }
+            return;
+        }
+
+        // Crop toggle: C
+        if ((e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            toggleCropModeWithKey();
+            return;
+        }
+
+        // Magic Wand toggle: W
+        if ((e.key === 'w' || e.key === 'W') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            toggleMagicWandMode();
             return;
         }
 
@@ -1831,7 +3172,7 @@
         if (((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) || e.key === '+') {
             e.preventDefault();
             if (cropper) {
-                cropper.zoom(0.1);
+                applyZoom(0.1);
             }
             return;
         }
@@ -1840,29 +3181,45 @@
         if (((e.metaKey || e.ctrlKey) && (e.key === '-' || e.key === '_')) || e.key === '-') {
             e.preventDefault();
             if (cropper) {
-                cropper.zoom(-0.1);
+                applyZoom(-0.1);
             }
             return;
         }
 
-        // Rotate Left: [ or Cmd/Ctrl + [
-        if (((e.metaKey || e.ctrlKey) && e.key === '[') || e.key === '[') {
+        // Shrink crop marquee: [ (1px per side)
+        if (e.key === '[' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            if (chkEnableCrop.checked && cropper && resizeCropMarqueeByInset(1)) {
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // Expand crop marquee: ] (1px per side)
+        if (e.key === ']' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            if (chkEnableCrop.checked && cropper && resizeCropMarqueeByInset(-1)) {
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // Rotate Left: Cmd/Ctrl + [
+        if ((e.metaKey || e.ctrlKey) && e.key === '[') {
             e.preventDefault();
             if (cropper) {
                 markTransformEdit('edit.rotate');
                 cropper.rotate(-90);
-                scheduleExpandContainerToCanvas();
+                scheduleSyncLayout();
             }
             return;
         }
 
-        // Rotate Right: ] or Cmd/Ctrl + ]
-        if (((e.metaKey || e.ctrlKey) && e.key === ']') || e.key === ']') {
+        // Rotate Right: Cmd/Ctrl + ]
+        if ((e.metaKey || e.ctrlKey) && e.key === ']') {
             e.preventDefault();
             if (cropper) {
                 markTransformEdit('edit.rotate');
                 cropper.rotate(90);
-                scheduleExpandContainerToCanvas();
+                scheduleSyncLayout();
             }
             return;
         }
@@ -1876,8 +3233,10 @@
 
         // Move crop marquee: Arrow keys (Shift = 10px)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            if (moveCropMarqueeWithArrow(e.key, e.shiftKey)) {
-                e.preventDefault();
+            if (chkEnableCrop.checked && cropper) {
+                if (moveCropMarqueeWithArrow(e.key, e.shiftKey)) {
+                    e.preventDefault();
+                }
             }
             return;
         }
@@ -1904,9 +3263,13 @@
             return;
         }
 
-        // Escape: close color modal, clear selection, cancel eyedropper, or uncheck crop box
+        // Escape: close modals, clear selection, cancel eyedropper, or uncheck crop box
         if (e.key === 'Escape') {
             e.preventDefault();
+            if (copyModal && copyModal.style.display === 'flex') {
+                hideCopyModal();
+                return;
+            }
             if (colorModal && colorModal.style.display === 'flex') {
                 hideColorModal();
                 return;
@@ -1916,9 +3279,22 @@
                 endColorPickerMode();
                 return;
             }
+            if (magicWandMask) {
+                clearMagicWandMask();
+                if (cropper) {
+                    chkEnableCrop.checked = false;
+                    syncCropPresetUI();
+                    cropper.clear();
+                    syncResizeInputsToOriginal();
+                }
+                return;
+            }
+            if (isMagicWandMode) {
+                endMagicWandMode(true);
+                return;
+            }
             if (isEyedropperActive && eraseTargetBounds) {
-                // Backup current source to undo stack before erase mutation
-                undoStack.push(imageEl.src);
+                pushHistorySnapshot('edit.eraseSelection');
 
                 const canvas = document.createElement('canvas');
                 canvas.width = originalWidth;
@@ -1957,8 +3333,7 @@
                 chkEnableCrop.checked = false;
                 syncCropPresetUI();
                 cropper.clear();
-                txtWidth.value = originalWidth;
-                txtHeight.value = originalHeight;
+                syncResizeInputsToOriginal();
                 isCircular = false;
                 presetButtons.forEach(b => b.classList.remove('active'));
             }
@@ -1967,6 +3342,11 @@
 
         // Enter: apply crop selection if crop mode is active
         if (e.key === 'Enter') {
+            if (copyModal && copyModal.style.display === 'flex') {
+                e.preventDefault();
+                confirmCopyToClipboard();
+                return;
+            }
             if (chkEnableCrop.checked && cropper && cropper.cropped) {
                 e.preventDefault();
                 btnApplyCrop.click();
@@ -1977,9 +3357,9 @@
 
     function performUndo(options) {
         const fromHost = options && options.fromHost;
-        if (undoStack.length > 0) {
-            const prevSrc = undoStack.pop();
-            initEditor(prevSrc);
+        if (historyStack.length > 0) {
+            const entry = historyStack.pop();
+            initEditor(entry.src);
             if (!fromHost) {
                 vscode.postMessage({ command: 'show-toast', text: t('toast.undoSuccess') });
             }
@@ -1989,6 +3369,10 @@
     }
 
     function triggerSave(type) {
+        if (type === 'save' && isDocumentEditor) {
+            vscode.postMessage({ command: 'save-document' });
+            return;
+        }
         if (window.editorApi && window.editorApi.getCanvasBlob) {
             window.editorApi.getCanvasBlob((blob) => {
                 if (!blob) return;
@@ -2008,31 +3392,47 @@
     // Expose variables for save & import protocols
     window.editorApi = {
         initEditor,
-        getCanvasBlob: function(callback) {
+        getCanvasBlob: function(callback, options) {
             if (!cropper) return;
-            const format = selFormat.value;
-            const quality = parseFloat(rngQuality.value) / 100;
+            const format = (options && options.format) || selFormat.value;
+            const quality = (options && options.quality != null)
+                ? options.quality
+                : parseFloat(rngQuality.value) / 100;
             const targetWidth = parseInt(txtWidth.value, 10) || originalWidth;
             const targetHeight = parseInt(txtHeight.value, 10) || originalHeight;
+            const hasSelection = chkEnableCrop.checked && cropper.cropped;
+            const copySelectionOnly = options && options.copySelectionOnly;
 
-            // If crop mode is NOT enabled, select the entire image bounds to get a clean full-image resize!
-            if (!chkEnableCrop.checked) {
-                cropper.crop();
-                cropper.setData({
-                    x: 0,
-                    y: 0,
-                    width: originalWidth,
-                    height: originalHeight
+            let canvas;
+
+            if (copySelectionOnly && hasSelection) {
+                canvas = cropper.getCroppedCanvas({
+                    imageSmoothingEnabled: true,
+                    imageSmoothingQuality: 'high'
+                });
+            } else if (copySelectionOnly === false) {
+                canvas = document.createElement('canvas');
+                canvas.width = originalWidth;
+                canvas.height = originalHeight;
+                canvas.getContext('2d').drawImage(imageEl, 0, 0);
+            } else {
+                if (!chkEnableCrop.checked) {
+                    cropper.crop();
+                    cropper.setData({
+                        x: 0,
+                        y: 0,
+                        width: originalWidth,
+                        height: originalHeight
+                    });
+                }
+
+                canvas = cropper.getCroppedCanvas({
+                    width: targetWidth,
+                    height: targetHeight,
+                    imageSmoothingEnabled: true,
+                    imageSmoothingQuality: 'high'
                 });
             }
-
-            // Apply cropping with resizing
-            let canvas = cropper.getCroppedCanvas({
-                width: targetWidth,
-                height: targetHeight,
-                imageSmoothingEnabled: true,
-                imageSmoothingQuality: 'high'
-            });
 
             // Apply circular mask if circle crop is active
             if (isCircular) {
@@ -2046,6 +3446,10 @@
                 ctx.clip();
                 ctx.drawImage(canvas, 0, 0);
                 canvas = circleCanvas;
+            }
+
+            if (magicWandMask && magicWandBounds && !(options && options.copySelectionOnly === false)) {
+                canvas = applyMagicWandMaskToCanvas(canvas, magicWandBounds);
             }
 
             canvas.toBlob(callback, format, quality);
