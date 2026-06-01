@@ -14,6 +14,12 @@ export function activate(context: vscode.ExtensionContext) {
             provider.createUntitledEditor();
         })
     );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vsimage.openWithEditor', (uri?: vscode.Uri) => {
+            void provider.openImageWithEditor(uri);
+        })
+    );
 }
 
 export function deactivate() {}

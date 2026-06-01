@@ -1417,13 +1417,7 @@
     }
 
     function captureInitialFitRatio() {
-        if (!cropper) {
-            return;
-        }
-        const data = cropper.getImageData();
-        if (data && data.naturalWidth) {
-            initialFitRatio = data.width / data.naturalWidth;
-        }
+        initialFitRatio = getViewportFitRatio();
     }
 
     function toggleZoomView() {
@@ -1438,8 +1432,9 @@
 
         const currentRatio = data.width / data.naturalWidth;
         const at100Percent = Math.abs(currentRatio - 1) < 0.005;
+        const fitRatio = getViewportFitRatio();
 
-        applyZoomTo(at100Percent ? initialFitRatio : 1);
+        applyZoomTo(at100Percent ? fitRatio : 1);
         updateZoomIndicator();
     }
 
@@ -1509,10 +1504,7 @@
     const presetButtons = document.querySelectorAll('#cropPresets button');
     presetButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            if (!chkEnableCrop.checked) {
-                chkEnableCrop.checked = true;
-                syncCropPresetUI();
-            }
+            ensureCropModeEnabled();
 
             presetButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1618,9 +1610,21 @@
 
     function applyCropBounds(bounds) {
         clearMagicWandMask();
+        normalizeCanvasOrigin();
         cropper.setData(bounds);
         updateResizeInputsFromCrop();
         cacheNaturalCropData();
+        scheduleSyncLayout();
+    }
+
+    function ensureCropModeEnabled() {
+        if (!chkEnableCrop.checked) {
+            chkEnableCrop.checked = true;
+            syncCropPresetUI();
+            if (cropper) {
+                initMarqueeToFullImage();
+            }
+        }
     }
 
     function autoCropToContent() {
@@ -1628,16 +1632,14 @@
             return false;
         }
 
-        if (!chkEnableCrop.checked) {
-            chkEnableCrop.checked = true;
-            syncCropPresetUI();
-        }
+        ensureCropModeEnabled();
 
         isCircular = false;
         cropper.crop();
         cropper.setAspectRatio(NaN);
         resetCropFaceStyles();
 
+        invalidateMagicWandCanvas();
         const bounds = getContentBoundsFromRegion(0, 0, originalWidth, originalHeight, false);
         if (!bounds) {
             vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropEmpty') });
@@ -1715,6 +1717,7 @@
             return false;
         }
 
+        invalidateMagicWandCanvas();
         const bounds = getContentBoundsFromRegion(regionX, regionY, regionW, regionH, isCircular);
         if (!bounds) {
             vscode.postMessage({ command: 'show-toast', text: t('toast.trimCropEmpty') });
@@ -2503,6 +2506,10 @@
     function ensureMagicWandCanvas() {
         if (!imageEl || !originalWidth || !originalHeight) {
             return false;
+        }
+        if (magicWandCanvas
+            && (magicWandCanvas.width !== originalWidth || magicWandCanvas.height !== originalHeight)) {
+            invalidateMagicWandCanvas();
         }
         if (!magicWandCanvas) {
             magicWandCanvas = document.createElement('canvas');

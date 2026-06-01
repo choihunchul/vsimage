@@ -2,9 +2,11 @@
   "extension.displayName": "VS Code 이미지 에디터",
   "extension.description": "VS Code 안에서 이미지를 자르고, 크기를 조절하고, 형식을 변환하는 프리미엄 이미지 에디터입니다.",
   "command.newEditor.title": "빈 이미지 에디터 만들기",
+  "command.openWithEditor.title": "vsimage로 편집하기",
   "customEditor.displayName": "VS Code 이미지 에디터",
   "untitledPanel.title": "제목 없는 이미지 에디터",
   "toast.saved": "이미지를 저장했습니다.",
   "toast.saveFailed": "이미지 저장에 실패했습니다.",
-  "toast.exported": "이미지를 {filename}(으)로 내보냈습니다."
+  "toast.exported": "이미지를 {filename}(으)로보냈습니다.",
+  "toast.openImageFailed": "이미지 파일을 읽을 수 없습니다. 파일이 존재하고 비어 있지 않은지 확인하세요."
 }

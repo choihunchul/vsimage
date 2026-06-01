@@ -44,6 +44,51 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         return loadMessageBundle(this.context.extensionPath, vscode.env.language);
     }
 
+    private getMimeTypeForUri(uri: vscode.Uri): string {
+        switch (path.extname(uri.fsPath).toLowerCase()) {
+            case '.png':
+                return 'image/png';
+            case '.jpg':
+            case '.jpeg':
+                return 'image/jpeg';
+            case '.webp':
+                return 'image/webp';
+            case '.gif':
+                return 'image/gif';
+            default:
+                return 'application/octet-stream';
+        }
+    }
+
+    private async readImageAsDataUri(uri: vscode.Uri): Promise<string | undefined> {
+        try {
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            if (!bytes.byteLength) {
+                return undefined;
+            }
+            const mime = this.getMimeTypeForUri(uri);
+            return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private getWebviewLocalResourceRoots(documentUri?: vscode.Uri): vscode.Uri[] {
+        const roots: vscode.Uri[] = [
+            vscode.Uri.file(path.join(this.context.extensionPath, 'media'))
+        ];
+
+        for (const folder of vscode.workspace.workspaceFolders ?? []) {
+            roots.push(folder.uri);
+        }
+
+        if (documentUri?.scheme === 'file' && documentUri.fsPath) {
+            roots.push(vscode.Uri.file(path.dirname(documentUri.fsPath)));
+        }
+
+        return roots;
+    }
+
     async openCustomDocument(uri: vscode.Uri): Promise<vscode.CustomDocument> {
         return {
             uri,
@@ -63,21 +108,29 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             this.webviews.delete(documentKey);
         });
 
+        const isUntitled = this.isUntitledDocument(document);
+
         webviewPanel.webview.options = {
             enableScripts: true,
-            localResourceRoots: [
-                vscode.Uri.file(path.join(this.context.extensionPath, 'media'))
-            ]
+            localResourceRoots: this.getWebviewLocalResourceRoots(isUntitled ? undefined : document.uri)
         };
 
-        const isUntitled = this.isUntitledDocument(document);
         if (isUntitled) {
             webviewPanel.title = translate(this.packageNls(), 'untitledPanel.title');
         }
 
+        const initialImageSrc = isUntitled
+            ? ''
+            : (await this.readImageAsDataUri(document.uri) ?? '');
+
+        if (!isUntitled && !initialImageSrc) {
+            vscode.window.showErrorMessage(translate(this.packageNls(), 'toast.openImageFailed'));
+        }
+
         webviewPanel.webview.html = this.getHtmlForWebview(
             webviewPanel.webview,
-            isUntitled ? undefined : document.uri,
+            initialImageSrc,
+            path.basename(document.uri.fsPath),
             true,
             isUntitled ? path.basename(document.uri.fsPath) : undefined
         );
@@ -157,10 +210,15 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             return;
         }
 
-        const imageUri = panel.webview.asWebviewUri(document.uri);
+        const src = await this.readImageAsDataUri(document.uri);
+        if (!src) {
+            vscode.window.showErrorMessage(translate(this.packageNls(), 'toast.openImageFailed'));
+            return;
+        }
+
         panel.webview.postMessage({
             command: 'revert-document',
-            src: imageUri.toString(),
+            src,
             filename: path.basename(document.uri.fsPath)
         });
     }
@@ -306,12 +364,31 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
     public async createUntitledEditor(): Promise<void> {
         this.untitledCounter += 1;
         const uri = vscode.Uri.parse(`untitled:Untitled-${this.untitledCounter}.png`);
-        await vscode.commands.executeCommand('vscode.openWith', uri, ImageCustomEditorProvider.viewType);
+        await this.openImageWithEditor(uri);
+    }
+
+    public async openImageWithEditor(uri?: vscode.Uri): Promise<void> {
+        const target = uri ?? vscode.window.activeTextEditor?.document.uri;
+        if (!target) {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                openLabel: translate(this.packageNls(), 'command.openWithEditor.title'),
+                filters: { Images: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }
+            });
+            if (!picked?.[0]) {
+                return;
+            }
+            await vscode.commands.executeCommand('vscode.openWith', picked[0], ImageCustomEditorProvider.viewType);
+            return;
+        }
+
+        await vscode.commands.executeCommand('vscode.openWith', target, ImageCustomEditorProvider.viewType);
     }
 
     private getHtmlForWebview(
         webview: vscode.Webview,
-        imageUri?: vscode.Uri,
+        initialImageSrc: string,
+        displayFilename: string,
         isDocumentEditor = false,
         untitledFilename?: string
     ): string {
@@ -323,9 +400,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.css')));
         const cropperJsUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.js')));
         const cropperCssUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.css')));
-        const imgWebviewUri = imageUri ? webview.asWebviewUri(imageUri) : '';
-        const filename = untitledFilename
-            ?? (imageUri ? path.basename(imageUri.fsPath) : translate(l10n, 'untitled'));
+        const safeImageSrc = initialImageSrc.replace(/"/g, '&quot;');
+        const filename = untitledFilename ?? displayFilename ?? translate(l10n, 'untitled');
         const untitledFilenameAttr = untitledFilename
             ? ` data-untitled-filename="${untitledFilename}"`
             : '';
@@ -368,7 +444,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="canvas-scroll-area" id="canvasScrollArea">
                             <div class="canvas-scroll-content" id="canvasScrollContent">
                                 <div class="image-container" id="imageContainer">
-                                    <img id="image" ${imgWebviewUri ? `src="${imgWebviewUri}"` : ''}>
+                                    <img id="image" ${safeImageSrc ? `src="${safeImageSrc}"` : ''}>
                                 </div>
                             </div>
                         </div>

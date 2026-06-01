@@ -2,9 +2,11 @@
   "extension.displayName": "VS Code Image Editor",
   "extension.description": "Premium image editor to crop, resize, and convert images inside VS Code with clipboard paste.",
   "command.newEditor.title": "Create Empty Image Editor",
+  "command.openWithEditor.title": "Edit with VS Code Image Editor",
   "customEditor.displayName": "VS Code Image Editor",
   "untitledPanel.title": "Untitled Image Editor",
   "toast.saved": "Image saved successfully.",
   "toast.saveFailed": "Failed to save image.",
-  "toast.exported": "Image exported successfully to {filename}."
+  "toast.exported": "Image exported successfully to {filename}.",
+  "toast.openImageFailed": "Could not read the image file. Check that the file exists and is not empty."
 }
