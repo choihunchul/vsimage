@@ -61,10 +61,22 @@ jobs:
 
       - name: Publish to Open VSX Registry
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_openvsx }}
-        continue-on-error: true
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx --yes ovsx@latest publish extension.vsix --pat "$OVSX_PAT"
+        run: |
+          set +e
+          OUTPUT=$(npx --yes ovsx@latest publish extension.vsix --pat "$OVSX_PAT" 2>&1)
+          CODE=$?
+          echo "$OUTPUT"
+          if [ "$CODE" -eq 0 ]; then
+            echo "Open VSX publish succeeded."
+            exit 0
+          fi
+          if echo "$OUTPUT" | grep -qiE "already published|already exists"; then
+            echo "::warning::Open VSX: this version is already uploaded. If it is inactive, activate it at https://open-vsx.org/extension/choihunchul/vsimage"
+            exit 0
+          fi
+          exit "$CODE"
 
       - name: Publish to VS Code Marketplace
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_marketplace }}
