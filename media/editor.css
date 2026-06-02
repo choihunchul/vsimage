@@ -250,6 +250,8 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
 /* Control sidebar styling */
 .sidebar-controls {
     width: 320px;
+    min-width: 320px;
+    flex: 0 0 320px;
     background-color: var(--sidebar-bg);
     border-left: 1px solid var(--border-color);
     padding: 16px;
@@ -696,11 +698,6 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-}
-
-.canvas-workspace .zoom-loupe-panel {
-    grid-column: 2;
-    grid-row: 2;
 }
 
 .zoom-loupe-label {

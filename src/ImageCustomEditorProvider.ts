@@ -449,10 +449,10 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                     <img id="image" ${safeImageSrc ? `src="${safeImageSrc}"` : ''}>
                                 </div>
                             </div>
-                        </div>
-                        <div id="zoomLoupePanel" class="zoom-loupe-panel" style="display: none;">
-                            <span class="zoom-loupe-label" data-i18n="zoomLoupe.label"></span>
-                            <canvas id="zoomLoupeCanvas" width="200" height="200"></canvas>
+                            <div id="zoomLoupePanel" class="zoom-loupe-panel" style="display: none;">
+                                <span class="zoom-loupe-label" data-i18n="zoomLoupe.label"></span>
+                                <canvas id="zoomLoupeCanvas" width="200" height="200"></canvas>
+                            </div>
                         </div>
                         <div class="canvas-toolbar-layer">
                             <div class="floating-toolbar" id="toolbar" style="display: none;">

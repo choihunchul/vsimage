@@ -25,7 +25,9 @@
             el.title = t(el.getAttribute('data-i18n-title'));
         });
         scope.querySelectorAll('[data-i18n-label]').forEach((el) => {
-            const meta = resizePanelLogic.resolveI18nPercentLabel(el.innerHTML);
+            const meta = resizePanelLogic
+                ? resizePanelLogic.resolveI18nPercentLabel(el.innerHTML)
+                : { valueId: 'qualityVal', defaultValue: '80' };
             const valueEl = el.querySelector(`#${meta.valueId}`);
             const value = valueEl ? valueEl.textContent : meta.defaultValue;
             el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="${meta.valueId}">${value}</span>%)`;
@@ -432,8 +434,7 @@
         initialImageSrc = null;
         imageEl.removeAttribute('src');
         imageEl.src = '';
-        toolbar.style.display = 'none';
-        sidebar.style.display = 'none';
+        hideEditorChrome();
         dashboard.style.display = 'flex';
         workspace.style.display = 'none';
         const untitledName = document.body.dataset.untitledFilename;
@@ -519,8 +520,29 @@
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
     }
 
-    const cropMarqueeLogic = globalThis.VsimageCropMarqueeLogic;
-    const resizePanelLogic = globalThis.VsimageResizePanelLogic;
+    const cropMarqueeLogic = globalThis.VsimageCropMarqueeLogic || {
+        clampCropBox: (x, y, w, h, ow, oh) => ({ x, y, width: w, height: h }),
+        isMarqueeFullImageNatural: () => false,
+        isPointInCropSelection: () => false,
+        shouldInvokeMarqueeDblClickToggle: () => false,
+        shouldInvokeImageZoomDblClick: () => false
+    };
+    const resizePanelLogic = globalThis.VsimageResizePanelLogic || {
+        buildResizePanelFromImage: (w, h) => ({
+            baseWidth: w, baseHeight: h, width: w, height: h, scalePercent: 100, widthPlaceholder: ''
+        }),
+        buildResizePanelFromCrop: (c) => ({
+            baseWidth: c?.width || 0, baseHeight: c?.height || 0,
+            width: c?.width || 0, height: c?.height || 0, scalePercent: 100, widthPlaceholder: ''
+        }),
+        shouldSyncResizePanelFromImage: () => true,
+        percentFromResizeWidth: () => null,
+        dimensionsFromResizeScalePercent: (p, bw, bh) => ({
+            width: Math.max(1, Math.round(bw * p / 100)),
+            height: Math.max(1, Math.round(bh * p / 100))
+        }),
+        resolveI18nPercentLabel: () => ({ valueId: 'qualityVal', defaultValue: '80' })
+    };
 
     function clampCropBox(x, y, width, height) {
         return cropMarqueeLogic.clampCropBox(x, y, width, height, originalWidth, originalHeight);
@@ -1348,13 +1370,33 @@
         }
     }
 
+    function showEditorChrome() {
+        if (sidebar) {
+            sidebar.style.display = 'flex';
+        }
+        if (toolbar) {
+            toolbar.style.display = 'flex';
+        }
+    }
+
+    function hideEditorChrome() {
+        if (sidebar) {
+            sidebar.style.display = 'none';
+        }
+        if (toolbar) {
+            toolbar.style.display = 'none';
+        }
+    }
+
     function startEditorMode() {
         if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
+            hideEditorChrome();
             dashboard.style.display = 'flex';
             workspace.style.display = 'none';
         } else {
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
+            showEditorChrome();
             initEditor(imageEl.src);
         }
     }
@@ -1419,6 +1461,7 @@
             lblFilename.textContent = file.name || t('pastedImage');
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
+            showEditorChrome();
             initEditor(event.target.result);
             if (isDocumentEditor) {
                 notifyDocumentChanged('edit.edit');
@@ -1471,9 +1514,7 @@
             lblDimensions.textContent = `${originalWidth} × ${originalHeight}`;
             syncResizeInputsToOriginal();
 
-            // Show UI panes
-            sidebar.style.display = 'flex';
-            toolbar.style.display = 'flex';
+            showEditorChrome();
             renderHistoryPanel();
 
             // Destroy previous instance
