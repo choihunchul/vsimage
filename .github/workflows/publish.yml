@@ -2,9 +2,8 @@
 
 name: Publish Extension
 
+# Tag push only — avoid duplicate runs when a GitHub Release is published for the same tag.
 on:
-  release:
-    types: [published]
   push:
     tags:
       - "v*"

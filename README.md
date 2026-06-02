@@ -136,7 +136,17 @@ Press **F5** in VS Code to launch the **Extension Development Host**.
 Automated via GitHub Actions:
 
 - **CI** — push/PR to `main` (build, test, VSIX)
-- **Publish** — GitHub Release or `v*` tag ([publish action](https://github.com/choihunchul/github--actions/tree/main/publish-vscode-extension))
+- **Publish** — push a `v*` tag (e.g. `git push origin v1.3.5`); runs once per tag. GitHub Releases are optional notes only and do not trigger publish.
+
+Release flow:
+
+```bash
+# bump version in package.json, commit, then:
+git tag v1.3.5
+git push origin main
+git push origin v1.3.5    # triggers marketplace publish
+gh release create v1.3.5 --notes "…"   # optional changelog only
+```
 
 Manual publish:
 
