@@ -396,6 +396,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         const lang = resolveLanguageId(vscode.env.language);
         const l10nEnUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'l10n', 'en.json')));
         const l10nKoUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'l10n', 'ko.json')));
+        const cropMarqueeLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropMarqueeLogic.js')));
+        const resizePanelLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'resizePanelLogic.js')));
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.js')));
         const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.css')));
         const cropperJsUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.js')));
@@ -447,6 +449,10 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                     <img id="image" ${safeImageSrc ? `src="${safeImageSrc}"` : ''}>
                                 </div>
                             </div>
+                        </div>
+                        <div id="zoomLoupePanel" class="zoom-loupe-panel" style="display: none;">
+                            <span class="zoom-loupe-label" data-i18n="zoomLoupe.label"></span>
+                            <canvas id="zoomLoupeCanvas" width="200" height="200"></canvas>
                         </div>
                         <div class="canvas-toolbar-layer">
                             <div class="floating-toolbar" id="toolbar" style="display: none;">
@@ -605,6 +611,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <span id="colorPickerPreview">#000000</span>
                 </div>
 
+                <!-- Z + drag: selection highlight on image -->
+                <div id="zoomLoupeSelection" class="zoom-loupe-selection" style="display: none;"></div>
+
                 <!-- Color Info Modal -->
                 <div id="colorModal" class="color-modal" style="display: none;">
                     <div class="color-modal-backdrop" id="colorModalBackdrop"></div>
@@ -661,6 +670,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + C</span><span class="shortcut-desc" data-i18n="shortcuts.copyImage"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + A</span><span class="shortcut-desc" data-i18n="shortcuts.selectAll"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Space + Drag</span><span class="shortcut-desc" data-i18n="shortcuts.pan"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">Z + Drag</span><span class="shortcut-desc" data-i18n="shortcuts.zoomLoupe"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key" data-i18n="shortcuts.dblClickImageKey"></span><span class="shortcut-desc" data-i18n="shortcuts.dblClickImage"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + 0</span><span class="shortcut-desc" data-i18n="shortcuts.zoomFit"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + +</span><span class="shortcut-desc" data-i18n="shortcuts.zoomIn"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + −</span><span class="shortcut-desc" data-i18n="shortcuts.zoomOut"></span></div>
@@ -677,6 +688,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 </div>
 
                 <script src="${cropperJsUri}"></script>
+                <script src="${cropMarqueeLogicUri}"></script>
+                <script src="${resizePanelLogicUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
             </html>

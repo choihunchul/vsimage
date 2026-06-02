@@ -25,10 +25,10 @@
             el.title = t(el.getAttribute('data-i18n-title'));
         });
         scope.querySelectorAll('[data-i18n-label]').forEach((el) => {
-            const valueEl = el.querySelector('#qualityVal, #copyQualityVal');
-            const value = valueEl ? valueEl.textContent : '80';
-            const valueId = valueEl ? valueEl.id : 'qualityVal';
-            el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="${valueId}">${value}</span>%)`;
+            const meta = resizePanelLogic.resolveI18nPercentLabel(el.innerHTML);
+            const valueEl = el.querySelector(`#${meta.valueId}`);
+            const value = valueEl ? valueEl.textContent : meta.defaultValue;
+            el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="${meta.valueId}">${value}</span>%)`;
         });
     }
 
@@ -212,6 +212,13 @@
     const colorPickerTooltip = document.getElementById('colorPickerTooltip');
     const colorPickerSwatch = document.getElementById('colorPickerSwatch');
     const colorPickerPreview = document.getElementById('colorPickerPreview');
+    const zoomLoupePanel = document.getElementById('zoomLoupePanel');
+    const zoomLoupeCanvas = document.getElementById('zoomLoupeCanvas');
+    const zoomLoupeSelection = document.getElementById('zoomLoupeSelection');
+    const zoomLoupeCtx = zoomLoupeCanvas ? zoomLoupeCanvas.getContext('2d') : null;
+    const Z_LOUPE_PANEL_PX = 200;
+    const Z_LOUPE_SPOT_RADIUS = 24;
+    const Z_LOUPE_MIN_DRAG = 2;
     const colorModal = document.getElementById('colorModal');
     const colorModalBackdrop = document.getElementById('colorModalBackdrop');
     const colorModalClose = document.getElementById('colorModalClose');
@@ -484,6 +491,9 @@
     let expandingContainer = false;
     let expandContainerFrame = null;
     let isSpacePressed = false;
+    let isZLoupeActive = false;
+    let isZLoupeDragging = false;
+    let zLoupeDragStart = null;
     let isPanning = false;
     let lastPanClientX = 0;
     let lastPanClientY = 0;
@@ -502,25 +512,18 @@
         if (!cropper) {
             return;
         }
-        if (isSpacePressed || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+        if (isSpacePressed || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             cropper.setDragMode('none');
             return;
         }
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
     }
 
-    function clampCropBox(x, y, width, height) {
-        const boxWidth = Math.max(1, Math.min(originalWidth, Math.round(width)));
-        const boxHeight = Math.max(1, Math.min(originalHeight, Math.round(height)));
-        const maxX = Math.max(0, originalWidth - boxWidth);
-        const maxY = Math.max(0, originalHeight - boxHeight);
+    const cropMarqueeLogic = globalThis.VsimageCropMarqueeLogic;
+    const resizePanelLogic = globalThis.VsimageResizePanelLogic;
 
-        return {
-            x: Math.max(0, Math.min(maxX, Math.round(x))),
-            y: Math.max(0, Math.min(maxY, Math.round(y))),
-            width: boxWidth,
-            height: boxHeight
-        };
+    function clampCropBox(x, y, width, height) {
+        return cropMarqueeLogic.clampCropBox(x, y, width, height, originalWidth, originalHeight);
     }
 
     function initMarqueeToFullImage() {
@@ -558,14 +561,15 @@
     }
 
     function isMarqueeFullImageNatural(tolerance = 2) {
-        if (!cropper || !cropper.cropped || originalWidth <= 0 || originalHeight <= 0) {
+        if (!cropper || !cropper.cropped) {
             return false;
         }
-        const data = cropper.getData(true);
-        return data.x <= tolerance
-            && data.y <= tolerance
-            && Math.abs(data.width - originalWidth) <= tolerance
-            && Math.abs(data.height - originalHeight) <= tolerance;
+        return cropMarqueeLogic.isMarqueeFullImageNatural(
+            cropper.getData(true),
+            originalWidth,
+            originalHeight,
+            tolerance
+        );
     }
 
     function ensureCropMarqueeForKeyboard() {
@@ -590,7 +594,7 @@
         if (!ensureCropMarqueeForKeyboard()) {
             return false;
         }
-        if (isSpacePressed || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+        if (isSpacePressed || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             return false;
         }
 
@@ -627,7 +631,7 @@
         if (!ensureCropMarqueeForKeyboard()) {
             return false;
         }
-        if (isSpacePressed || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+        if (isSpacePressed || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             return false;
         }
 
@@ -1082,11 +1086,208 @@
         isSpacePressed = false;
         endPanning();
         setPanMode(false);
+        setZLoupeActive(false);
         scheduleSyncLayout();
     });
 
+    function canUseZLoupe() {
+        return !!(cropper && isPanTargetVisible()
+            && !isEyedropperActive
+            && !isColorPickerMode
+            && !isMagicWandMode
+            && !isSpacePressed);
+    }
+
+    function setZLoupeActive(active) {
+        isZLoupeActive = active;
+        if (!active) {
+            endZLoupeDrag();
+            hideZoomLoupe();
+        }
+        if (canvasScrollArea) {
+            canvasScrollArea.classList.toggle('zoom-loupe-active', active && canUseZLoupe());
+        }
+        updateCropInteraction();
+    }
+
+    function endZLoupeDrag() {
+        isZLoupeDragging = false;
+        zLoupeDragStart = null;
+        hideZoomLoupeSelectionOverlay();
+    }
+
+    function hideZoomLoupe() {
+        if (zoomLoupePanel) {
+            zoomLoupePanel.style.display = 'none';
+        }
+    }
+
+    function hideZoomLoupeSelectionOverlay() {
+        if (zoomLoupeSelection) {
+            zoomLoupeSelection.style.display = 'none';
+        }
+    }
+
+    function clampNaturalRect(x, y, width, height) {
+        const w = Math.max(1, Math.min(width, originalWidth));
+        const h = Math.max(1, Math.min(height, originalHeight));
+        const maxX = Math.max(0, originalWidth - w);
+        const maxY = Math.max(0, originalHeight - h);
+        return {
+            x: Math.max(0, Math.min(maxX, x)),
+            y: Math.max(0, Math.min(maxY, y)),
+            width: w,
+            height: h
+        };
+    }
+
+    function getNaturalRectFromPoints(start, end) {
+        const x0 = Math.min(start.x, end.x);
+        const y0 = Math.min(start.y, end.y);
+        const x1 = Math.max(start.x, end.x);
+        const y1 = Math.max(start.y, end.y);
+        const width = Math.max(Z_LOUPE_MIN_DRAG, x1 - x0 + 1);
+        const height = Math.max(Z_LOUPE_MIN_DRAG, y1 - y0 + 1);
+        return clampNaturalRect(x0, y0, width, height);
+    }
+
+    function naturalRectToClientBounds(rect) {
+        if (!cropper) {
+            return null;
+        }
+        const imageData = cropper.getImageData();
+        const containerRect = cropper.container.getBoundingClientRect();
+        if (!imageData.width || !imageData.naturalWidth) {
+            return null;
+        }
+        const scaleX = imageData.width / imageData.naturalWidth;
+        const scaleY = imageData.height / imageData.naturalHeight;
+        return {
+            left: containerRect.left + imageData.left + rect.x * scaleX,
+            top: containerRect.top + imageData.top + rect.y * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
+        };
+    }
+
+    function drawZoomLoupeRegion(rect) {
+        if (!zoomLoupePanel || !zoomLoupeCanvas || !zoomLoupeCtx || !ensureColorPickerCanvas()) {
+            return;
+        }
+        zoomLoupePanel.style.display = 'flex';
+        zoomLoupeCtx.imageSmoothingEnabled = true;
+        zoomLoupeCtx.imageSmoothingQuality = 'high';
+        zoomLoupeCtx.clearRect(0, 0, Z_LOUPE_PANEL_PX, Z_LOUPE_PANEL_PX);
+        zoomLoupeCtx.drawImage(
+            colorPickerCanvas,
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            0,
+            0,
+            Z_LOUPE_PANEL_PX,
+            Z_LOUPE_PANEL_PX
+        );
+    }
+
+    function updateZoomLoupeSpot(point) {
+        const half = Z_LOUPE_SPOT_RADIUS;
+        const rect = clampNaturalRect(
+            point.x - half,
+            point.y - half,
+            half * 2 + 1,
+            half * 2 + 1
+        );
+        drawZoomLoupeRegion(rect);
+        hideZoomLoupeSelectionOverlay();
+    }
+
+    function updateZoomLoupeDrag(start, end) {
+        const rect = getNaturalRectFromPoints(start, end);
+        drawZoomLoupeRegion(rect);
+        const bounds = naturalRectToClientBounds(rect);
+        if (!bounds || !zoomLoupeSelection) {
+            return;
+        }
+        zoomLoupeSelection.style.display = 'block';
+        zoomLoupeSelection.style.left = `${bounds.left}px`;
+        zoomLoupeSelection.style.top = `${bounds.top}px`;
+        zoomLoupeSelection.style.width = `${bounds.width}px`;
+        zoomLoupeSelection.style.height = `${bounds.height}px`;
+    }
+
+    function onZLoupeMouseMove(e) {
+        if (!isZLoupeActive || !canUseZLoupe()) {
+            return;
+        }
+        if (isZLoupeDragging && zLoupeDragStart) {
+            const point = getImagePointFromEvent(e);
+            if (point) {
+                updateZoomLoupeDrag(zLoupeDragStart, point);
+            }
+            return;
+        }
+        const point = getImagePointFromEvent(e);
+        if (!point) {
+            hideZoomLoupe();
+            return;
+        }
+        updateZoomLoupeSpot(point);
+    }
+
+    function onZLoupeMouseDown(e) {
+        if (!isZLoupeActive || !canUseZLoupe() || e.button !== 0) {
+            return;
+        }
+        if (!canvasScrollArea || !canvasScrollArea.contains(e.target)) {
+            return;
+        }
+        if (e.target.closest('.floating-toolbar')) {
+            return;
+        }
+        const point = getImagePointFromEvent(e);
+        if (!point) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        isZLoupeDragging = true;
+        zLoupeDragStart = point;
+        updateZoomLoupeDrag(point, point);
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.code !== 'KeyZ' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) {
+            return;
+        }
+        if (isTypingTarget(document.activeElement)) {
+            return;
+        }
+        if (!canUseZLoupe()) {
+            return;
+        }
+        e.preventDefault();
+        setZLoupeActive(true);
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if (e.code !== 'KeyZ') {
+            return;
+        }
+        setZLoupeActive(false);
+    });
+
+    document.addEventListener('mousedown', onZLoupeMouseDown, true);
+    document.addEventListener('mousemove', onZLoupeMouseMove);
+    document.addEventListener('mouseup', () => {
+        if (isZLoupeDragging) {
+            endZLoupeDrag();
+        }
+    });
+
     function onPanMouseDown(e) {
-        if (!isSpacePressed || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode) {
+        if (!isSpacePressed || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
             return;
         }
         if (!isPanTargetVisible()) {
@@ -1119,7 +1320,7 @@
     }
 
     document.addEventListener('mousedown', (e) => {
-        if (!isSpacePressed || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode) {
+        if (!isSpacePressed || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
             return;
         }
         if (!isPanTargetVisible()) {
@@ -1319,7 +1520,9 @@
                         }
                     });
                     updateCropInteraction();
-                    if (cropper.cropped) {
+                    if (resizePanelLogic.shouldSyncResizePanelFromImage(chkEnableCrop.checked, cropper.cropped)) {
+                        syncResizeInputsToOriginal();
+                    } else {
                         updateResizeInputsFromCrop();
                     }
                     focusCropKeyboardTarget();
@@ -1352,29 +1555,41 @@
         };
     }
 
-    function syncResizeInputsToOriginal() {
-        resizeBaseWidth = originalWidth;
-        resizeBaseHeight = originalHeight;
+    function applyResizePanelState(panel) {
+        resizeBaseWidth = panel.baseWidth;
+        resizeBaseHeight = panel.baseHeight;
         if (txtWidth) {
-            txtWidth.value = originalWidth;
-            txtWidth.placeholder = originalWidth > 0 ? String(originalWidth) : '';
+            txtWidth.value = panel.width;
+            txtWidth.placeholder = panel.widthPlaceholder != null
+                ? panel.widthPlaceholder
+                : (panel.width > 0 ? String(panel.width) : '');
         }
         if (txtHeight) {
-            txtHeight.value = originalHeight;
-            txtHeight.placeholder = originalHeight > 0 ? String(originalHeight) : '';
+            txtHeight.value = panel.height;
+            txtHeight.placeholder = panel.height > 0 ? String(panel.height) : '';
         }
         if (rngResizeScale) {
-            rngResizeScale.value = 100;
+            rngResizeScale.value = panel.scalePercent;
         }
         if (resizeScaleVal) {
-            resizeScaleVal.textContent = '100';
+            resizeScaleVal.textContent = String(panel.scalePercent);
         }
     }
 
+    function syncResizeInputsToOriginal() {
+        applyResizePanelState(
+            resizePanelLogic.buildResizePanelFromImage(originalWidth, originalHeight)
+        );
+    }
+
     function applyResizeScale(percent) {
-        const scale = percent / 100;
-        txtWidth.value = Math.max(1, Math.round(resizeBaseWidth * scale));
-        txtHeight.value = Math.max(1, Math.round(resizeBaseHeight * scale));
+        const dims = resizePanelLogic.dimensionsFromResizeScalePercent(
+            percent,
+            resizeBaseWidth,
+            resizeBaseHeight
+        );
+        txtWidth.value = dims.width;
+        txtHeight.value = dims.height;
     }
 
     /** Downscale in ~50% steps to reduce blur/aliasing from one-shot canvas resize. */
@@ -1425,15 +1640,13 @@
         if (!rngResizeScale || resizeBaseWidth <= 0) {
             return;
         }
-        const width = parseInt(txtWidth.value, 10);
-        if (!width || width <= 0) {
+        const percent = resizePanelLogic.percentFromResizeWidth(txtWidth.value, resizeBaseWidth);
+        if (percent == null) {
             return;
         }
-        const percent = Math.round((width / resizeBaseWidth) * 100);
-        const clamped = Math.min(200, Math.max(10, percent));
-        rngResizeScale.value = clamped;
+        rngResizeScale.value = percent;
         if (resizeScaleVal) {
-            resizeScaleVal.textContent = String(clamped);
+            resizeScaleVal.textContent = String(percent);
         }
     }
 
@@ -1441,17 +1654,7 @@
         if (!cropper) {
             return;
         }
-        const data = cropper.getData();
-        resizeBaseWidth = Math.round(data.width);
-        resizeBaseHeight = Math.round(data.height);
-        txtWidth.value = resizeBaseWidth;
-        txtHeight.value = resizeBaseHeight;
-        if (rngResizeScale) {
-            rngResizeScale.value = 100;
-        }
-        if (resizeScaleVal) {
-            resizeScaleVal.textContent = '100';
-        }
+        applyResizePanelState(resizePanelLogic.buildResizePanelFromCrop(cropper.getData()));
     }
 
     function updateZoomIndicator() {
@@ -1702,12 +1905,7 @@
         if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
             return false;
         }
-
-        const data = cropper.getData(true);
-        return point.x >= data.x
-            && point.x < data.x + data.width
-            && point.y >= data.y
-            && point.y < data.y + data.height;
+        return cropMarqueeLogic.isPointInCropSelection(point, cropper.getData(true));
     }
 
     function isMarqueeFullImage() {
@@ -1783,31 +1981,45 @@
         return true;
     }
 
-    function onCropMarqueeDblClick(e) {
-        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
-            return;
-        }
-        if (isEyedropperActive || isMagicWandMode || isColorPickerMode || isSpacePressed) {
-            return;
-        }
-        if (!canvasScrollArea || !canvasScrollArea.contains(e.target)) {
-            return;
-        }
-        if (e.target.closest('.floating-toolbar') || e.target.closest('.color-modal') || e.target.closest('.copy-modal')) {
-            return;
-        }
-
-        const point = getImagePointFromEvent(e);
-        if (!point || !isPointInCropSelection(point)) {
-            return;
-        }
-
-        e.preventDefault();
-        e.stopPropagation();
-        toggleCropMarqueeFullContent();
+    function getWorkspaceDblClickState(e) {
+        return {
+            hasCropper: !!cropper,
+            cropEnabled: chkEnableCrop.checked,
+            cropped: !!(cropper && cropper.cropped),
+            eyedropperActive: isEyedropperActive,
+            magicWandMode: isMagicWandMode,
+            colorPickerMode: isColorPickerMode,
+            spacePressed: isSpacePressed,
+            zLoupeActive: isZLoupeActive,
+            targetInCanvas: !!(canvasScrollArea && canvasScrollArea.contains(e.target)),
+            targetInToolbar: !!e.target.closest('.floating-toolbar'),
+            targetInModal: !!(e.target.closest('.color-modal') || e.target.closest('.copy-modal'))
+        };
     }
 
-    workspace.addEventListener('dblclick', onCropMarqueeDblClick, true);
+    function onWorkspaceDblClick(e) {
+        if (isZLoupeActive) {
+            return;
+        }
+        const point = getImagePointFromEvent(e);
+        const cropData = cropper && cropper.cropped ? cropper.getData(true) : null;
+        const state = getWorkspaceDblClickState(e);
+
+        if (cropMarqueeLogic.shouldInvokeMarqueeDblClickToggle(state, point, cropData)) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleCropMarqueeFullContent();
+            return;
+        }
+
+        if (cropMarqueeLogic.shouldInvokeImageZoomDblClick(state, point, cropData)) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleZoomView();
+        }
+    }
+
+    workspace.addEventListener('dblclick', onWorkspaceDblClick, true);
 
     // Aspect Ratio Lock and Dimension synchronization
     txtWidth.addEventListener('input', () => {
@@ -1973,11 +2185,9 @@
         }
 
         const newSrc = canvas.toDataURL();
-        initEditor(newSrc);
-        
-        // Reset crop mode checkbox
         chkEnableCrop.checked = false;
         syncCropPresetUI();
+        initEditor(newSrc);
 
         notifyDocumentChanged('edit.crop');
         vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
@@ -2868,10 +3078,9 @@
         canvas = applyMagicWandMaskToCanvas(canvas, magicWandBounds);
 
         const newSrc = canvas.toDataURL();
-        initEditor(newSrc);
-
         chkEnableCrop.checked = false;
         syncCropPresetUI();
+        initEditor(newSrc);
         notifyDocumentChanged('edit.crop');
         vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
     }
@@ -3316,6 +3525,10 @@
         // Escape: close modals, clear selection, cancel eyedropper, or uncheck crop box
         if (e.key === 'Escape') {
             e.preventDefault();
+            if (isZLoupeActive) {
+                setZLoupeActive(false);
+                return;
+            }
             if (copyModal && copyModal.style.display === 'flex') {
                 hideCopyModal();
                 return;

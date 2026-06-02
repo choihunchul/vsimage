@@ -7,33 +7,78 @@ Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, r
 
 ## Features
 
-- **Custom image editor** for `png`, `jpg`, `jpeg`, `webp`, `gif`
-- **Crop** with presets (auto, free, 1:1, 16:9, 4:3, circle) and marquee tools
-- **Magic wand** — select similar-color regions (tolerance slider)
-- **Resize** with aspect-ratio lock and scale slider (10–200%)
-- **Transform** — rotate, flip, zoom, pan (Space + drag)
+- **Default image editor** for `png`, `jpg`, `jpeg`, `webp`, `gif` (opens in vsimage on double-click)
+- **Explorer / tab context menu** — *Edit with VS Code Image Editor* (`vsimage: Open with Image Editor`)
+- **Crop** — presets (auto, free, 1:1, 16:9, 4:3, circle), keyboard marquee tools
+- **Magic wand** — select similar-color regions (tolerance slider, **W** + click)
+- **Resize** — width/height, scale slider (10–200%), aspect-ratio lock; stepped downscale for sharper shrinks
+- **Transform** — rotate, flip, toolbar zoom, pan (**Space** + drag)
+- **Zoom loupe** — hold **Z** and drag on the image; magnified preview on the canvas + selection outline
 - **Edit history** — thumbnail snapshots with one-click restore
 - **Save flow** — dirty-state tracking, save prompt on close, untitled document support
 - **Export** as PNG, JPEG, or WebP with quality control
 - **Clipboard** — paste images in, copy edited images out (format & selection options)
-- **Color picker** — hold **Option/Alt** over the image, click to sample, copy as HEX / RGB / RGBA / HSL / HSV / CMYK
+- **Color picker** — hold **Option/Alt**, move over the image, click to sample; copy as HEX / RGB / RGBA / HSL / HSV / CMYK
 - **Pixel rulers** with zoom-aware ticks
-- **Undo** for destructive edits (Cmd/Ctrl+Z)
+- **Right-click menu** on the canvas (copy, erase selection, flip, save, undo, reset zoom)
+- **Undo** for destructive edits (**Cmd/Ctrl+Z**)
 - **i18n** — English and Korean UI (follows VS Code display language)
 
 ## Usage
 
-1. Open an image file in the workspace — choose **VS Code Image Editor** from “Open With” if prompted.
-2. Or run **Command Palette → `vsimage: Create Empty Image Editor`** to start from file import, drag-and-drop, or clipboard paste.
-3. Use the sidebar for crop, resize, history, and save/export. Use the floating toolbar for zoom and rotation.
-4. Hold **Cmd/Ctrl** to show the keyboard shortcut cheatsheet overlay.
+### Open an image
 
-### Crop marquee tips
+1. **Double-click** a supported image in the Explorer — opens in vsimage (default custom editor).
+2. Or **right-click** the file → **Edit with VS Code Image Editor**.
+3. Or **Command Palette** → `vsimage: Open with Image Editor` (current file).
+4. Or **Command Palette** → `vsimage: Create Empty Image Editor` — import, drag-and-drop, or **Cmd/Ctrl+V** paste.
 
-- Press **C** to toggle crop mode on/off.
-- Double-click inside the marquee to toggle **full image ↔ trim to content**.
-- Use **\[ / \]** to shrink or expand the marquee by 1px per side.
-- Use **arrow keys** to move the marquee (**Shift** = 10px steps).
+If an image already opened in another viewer, use **Reopen Editor With…** → **VS Code Image Editor**.
+
+### Workspace layout
+
+- **Canvas** — image, rulers, scroll/zoom; floating toolbar (zoom, rotate, flip, magic wand).
+- **Sidebar** — properties, crop, resize, history, save/export.
+- Hold **Cmd/Ctrl** on the canvas to show the keyboard shortcut overlay.
+
+### Crop & marquee
+
+| Action | Input |
+|--------|--------|
+| Toggle crop mode | **C** |
+| Select all | **Cmd/Ctrl+A** |
+| Shrink marquee (1px per side) | **`[`** |
+| Expand marquee (1px per side) | **`]`** |
+| Move marquee | **Arrow keys** (**Shift** = 10px) |
+| Apply crop | **Enter** or sidebar button |
+| Auto crop to content | Sidebar **Auto** preset |
+| Full image ↔ trim to content | **Double-click inside** the marquee |
+| Erase selection | **Delete** / **Backspace** (or eyedropper fill) |
+
+### Zoom & navigation
+
+| Action | Input |
+|--------|--------|
+| Zoom in / out | **+** / **-** or toolbar |
+| Toggle **100% ↔ fit viewport** | **Cmd/Ctrl+0**, toolbar reset, or **double-click** on image when crop is off / outside the marquee |
+| Pan | **Space** + drag |
+| Magnify region on canvas | Hold **Z** + drag (preview panel bottom-right; **Esc** or release **Z** to exit) |
+
+When crop mode is on, **double-click inside the marquee** still toggles full image ↔ trim to content. **Double-click outside** the marquee (or with crop off) toggles zoom fit ↔ 100%.
+
+### Resize
+
+1. Set target width/height or use the scale slider.
+2. Click **Apply Resize** — image updates; sidebar shows the new pixel size at **100%** scale.
+3. Large downscales use **stepped resizing** to reduce blur.
+
+After **crop** or **resize**, the resize panel reflects the **current image dimensions** (not cleared to zero).
+
+### Color & clipboard
+
+- **Option/Alt** — live color preview; click to open format modal and copy.
+- **Cmd/Ctrl+C** — copy image (optional format modal).
+- **Cmd/Ctrl+S** — save.
 
 ## Keyboard shortcuts
 
@@ -47,14 +92,17 @@ Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, r
 | `Cmd/Ctrl + +` / `-` | Zoom in / out |
 | `Cmd/Ctrl + [` / `]` | Rotate left / right |
 | `Space + Drag` | Pan |
+| `Z` (hold) + Drag | Magnify area on canvas |
+| `Double-click` | 100% ↔ fit (no marquee / outside selection) |
+| `Double-click` (in marquee) | Full image ↔ trim to content |
 | `C` | Toggle crop mode |
 | `W + Click` | Magic wand select |
 | `Option/Alt + Click` | Pick color |
-| `[` / `]` | Shrink / expand marquee |
+| `[` / `]` | Shrink / expand marquee (1px per side) |
 | `↑ ↓ ← →` | Move marquee |
 | `Enter` | Apply crop |
-| `Del / Backspace` | Erase / fill selection |
-| `Esc` | Cancel / dismiss |
+| `Del / Backspace` | Erase selection |
+| `Esc` | Cancel loupe / modals / crop modes |
 
 ## Install
 
@@ -63,25 +111,34 @@ Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, r
 | VS Code Marketplace | [choihunchul.vsimage](https://marketplace.visualstudio.com/items?itemName=choihunchul.vsimage) |
 | Open VSX (VSCodium, etc.) | [choihunchul/vsimage](https://open-vsx.org/extension/choihunchul/vsimage) |
 
-Or search for **VS Code Image Editor** (publisher: `choihunchul`).
+Search for **VS Code Image Editor** (publisher: `choihunchul`).
 
 ## Development
 
 ```bash
 npm install
-npm run compile
-npm test
-# Press F5 in VS Code to launch Extension Development Host
+npm run compile          # extension bundle
+npm run compile-tests    # test TypeScript → out/
+npm test                 # Extension Development Host integration tests (F5 environment)
 ```
+
+Quick unit tests (marquee / resize panel logic, no VS Code runtime):
+
+```bash
+npm run compile-tests
+npx mocha out/src/test/suite/marqueeDblclick.test.js out/src/test/suite/resizePanel.test.js --ui tdd
+```
+
+Press **F5** in VS Code to launch the **Extension Development Host**.
 
 ## Release & publish
 
-Releases are automated via GitHub Actions:
+Automated via GitHub Actions:
 
-- **CI** — runs on push/PR to `main` (build, test, VSIX packaging)
-- **Publish** — runs on GitHub Release or `v*` tag push ([composite action](https://github.com/choihunchul/github--actions/tree/main/publish-vscode-extension))
+- **CI** — push/PR to `main` (build, test, VSIX)
+- **Publish** — GitHub Release or `v*` tag ([publish action](https://github.com/choihunchul/github--actions/tree/main/publish-vscode-extension))
 
-Manual publish (local):
+Manual publish:
 
 ```bash
 npm run package
@@ -89,7 +146,7 @@ npm run publish:vsce   # VS Code Marketplace
 npm run publish:ovsx   # Open VSX
 ```
 
-Requires repository secrets `VSCE_PAT` (Azure DevOps PAT with Marketplace **Manage**) and `OVSX_PAT` ([open-vsx.org](https://open-vsx.org/user-settings/tokens)).
+Secrets: `VSCE_PAT` (Marketplace **Manage**), `OVSX_PAT` ([open-vsx.org](https://open-vsx.org/user-settings/tokens)).
 
 ## Links
 
