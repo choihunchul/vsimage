@@ -535,18 +535,10 @@
             cropper.crop();
         }
         normalizeCanvasOrigin();
-        const canvas = cropper.getCanvasData();
-        if (!canvas || !canvas.width) {
-            return;
-        }
-        cropper.setCropBoxData({
-            left: canvas.left,
-            top: canvas.top,
-            width: canvas.width,
-            height: canvas.height
-        });
+        cropper.setData(clampCropBox(0, 0, originalWidth, originalHeight));
         updateResizeInputsFromCrop();
         cacheNaturalCropData();
+        scheduleSyncLayout();
     }
 
     function isCropBoxMatchingCanvas(tolerance = 2) {
@@ -563,6 +555,17 @@
             && Math.abs(box.top - canvas.top) <= tolerance
             && Math.abs(box.width - canvas.width) <= tolerance
             && Math.abs(box.height - canvas.height) <= tolerance;
+    }
+
+    function isMarqueeFullImageNatural(tolerance = 2) {
+        if (!cropper || !cropper.cropped || originalWidth <= 0 || originalHeight <= 0) {
+            return false;
+        }
+        const data = cropper.getData(true);
+        return data.x <= tolerance
+            && data.y <= tolerance
+            && Math.abs(data.width - originalWidth) <= tolerance
+            && Math.abs(data.height - originalHeight) <= tolerance;
     }
 
     function ensureCropMarqueeForKeyboard() {
@@ -1374,6 +1377,50 @@
         txtHeight.value = Math.max(1, Math.round(resizeBaseHeight * scale));
     }
 
+    /** Downscale in ~50% steps to reduce blur/aliasing from one-shot canvas resize. */
+    function resizeCanvasStepped(source, targetW, targetH) {
+        const srcW = source.width;
+        const srcH = source.height;
+        if (srcW === targetW && srcH === targetH) {
+            return source;
+        }
+
+        function drawToSize(src, w, h) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(src, 0, 0, w, h);
+            return canvas;
+        }
+
+        if (targetW >= srcW && targetH >= srcH) {
+            return drawToSize(source, targetW, targetH);
+        }
+
+        let w = srcW;
+        let h = srcH;
+        let current = source;
+
+        while (w > targetW * 2 || h > targetH * 2) {
+            w = Math.max(targetW, Math.floor(w / 2));
+            h = Math.max(targetH, Math.floor(h / 2));
+            current = drawToSize(current, w, h);
+        }
+
+        return drawToSize(current, targetW, targetH);
+    }
+
+    function getCroppedCanvasResized(targetW, targetH) {
+        const canvas = cropper.getCroppedCanvas({
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high'
+        });
+        return resizeCanvasStepped(canvas, targetW, targetH);
+    }
+
     function updateResizeScaleFromInputs() {
         if (!rngResizeScale || resizeBaseWidth <= 0) {
             return;
@@ -1664,7 +1711,7 @@
     }
 
     function isMarqueeFullImage() {
-        return isCropBoxMatchingCanvas();
+        return isMarqueeFullImageNatural();
     }
 
     function expandCropSelectionToFullImage() {
@@ -1678,6 +1725,8 @@
         if (!isMarqueeFullImage()) {
             return false;
         }
+        applyZoomTo(1);
+        updateZoomIndicator();
         presetButtons.forEach(b => b.classList.remove('active'));
         const freeBtn = document.querySelector('#cropPresets button[data-ratio="NaN"]');
         if (freeBtn) {
@@ -1861,13 +1910,7 @@
                 });
             }
 
-            // Export cropped & resized image to base64
-            let canvas = cropper.getCroppedCanvas({
-                width: targetWidth,
-                height: targetHeight,
-                imageSmoothingEnabled: true,
-                imageSmoothingQuality: 'high'
-            });
+            let canvas = getCroppedCanvasResized(targetWidth, targetHeight);
 
             // Apply circular mask if circle crop is active
             if (isCircular) {
@@ -3433,12 +3476,7 @@
                     });
                 }
 
-                canvas = cropper.getCroppedCanvas({
-                    width: targetWidth,
-                    height: targetHeight,
-                    imageSmoothingEnabled: true,
-                    imageSmoothingQuality: 'high'
-                });
+                canvas = getCroppedCanvasResized(targetWidth, targetHeight);
             }
 
             // Apply circular mask if circle crop is active
