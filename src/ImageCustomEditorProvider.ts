@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import { loadMessageBundle, loadPackageNls, resolveLanguageId, t as translate } from './l10n';
 
@@ -40,6 +41,17 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         return loadPackageNls(this.context.extensionPath, vscode.env.language);
     }
 
+    private getExtensionVersionLabel(): string {
+        try {
+            const packageJsonPath = path.join(this.context.extensionPath, 'package.json');
+            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as { version?: string };
+            const version = String(packageJson.version ?? '').trim();
+            return version ? `v${version}` : '';
+        } catch {
+            return '';
+        }
+    }
+
     private webviewL10n() {
         return loadMessageBundle(this.context.extensionPath, vscode.env.language);
     }
@@ -60,14 +72,17 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         }
     }
 
-    private async readImageAsDataUri(uri: vscode.Uri): Promise<string | undefined> {
+    private async readImageAsDataUri(uri: vscode.Uri): Promise<{ src: string; fileSizeBytes: number } | undefined> {
         try {
             const bytes = await vscode.workspace.fs.readFile(uri);
             if (!bytes.byteLength) {
                 return undefined;
             }
             const mime = this.getMimeTypeForUri(uri);
-            return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+            return {
+                src: `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`,
+                fileSizeBytes: bytes.byteLength
+            };
         } catch {
             return undefined;
         }
@@ -119,9 +134,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             webviewPanel.title = translate(this.packageNls(), 'untitledPanel.title');
         }
 
-        const initialImageSrc = isUntitled
-            ? ''
-            : (await this.readImageAsDataUri(document.uri) ?? '');
+        const initialImage = isUntitled ? undefined : await this.readImageAsDataUri(document.uri);
+        const initialImageSrc = initialImage?.src ?? '';
 
         if (!isUntitled && !initialImageSrc) {
             vscode.window.showErrorMessage(translate(this.packageNls(), 'toast.openImageFailed'));
@@ -130,7 +144,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         webviewPanel.webview.html = this.getHtmlForWebview(
             webviewPanel.webview,
             initialImageSrc,
-            path.basename(document.uri.fsPath),
+            initialImage?.fileSizeBytes,
             true,
             isUntitled ? path.basename(document.uri.fsPath) : undefined
         );
@@ -177,7 +191,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
         const { buffer } = await this.requestImageData(panel.webview, cancellation);
         await vscode.workspace.fs.writeFile(document.uri, buffer);
-        this.markDocumentSaved(document, panel);
+        this.markDocumentSaved(document, panel, buffer.byteLength);
     }
 
     async saveCustomDocumentAs(
@@ -194,7 +208,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
         const { buffer } = await this.requestImageData(panel.webview, cancellation);
         await vscode.workspace.fs.writeFile(destination, buffer);
-        this.markDocumentSaved(document, panel);
+        this.markDocumentSaved(document, panel, buffer.byteLength);
     }
 
     async revertCustomDocument(document: vscode.CustomDocument, _cancellation: vscode.CancellationToken): Promise<void> {
@@ -203,9 +217,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             return;
         }
 
-        this.markDocumentSaved(document, panel);
-
         if (this.isUntitledDocument(document)) {
+            this.markDocumentSaved(document, panel);
             panel.webview.postMessage({ command: 'revert-untitled' });
             return;
         }
@@ -216,10 +229,11 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             return;
         }
 
+        this.markDocumentSaved(document, panel, src.fileSizeBytes);
         panel.webview.postMessage({
             command: 'revert-document',
-            src,
-            filename: path.basename(document.uri.fsPath)
+            src: src.src,
+            fileSizeBytes: src.fileSizeBytes
         });
     }
 
@@ -271,9 +285,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         });
     }
 
-    private markDocumentSaved(document: vscode.CustomDocument, panel?: vscode.WebviewPanel): void {
+    private markDocumentSaved(document: vscode.CustomDocument, panel?: vscode.WebviewPanel, fileSizeBytes?: number): void {
         const targetPanel = panel ?? this.webviews.get(document.uri.toString());
-        targetPanel?.webview.postMessage({ command: 'document-saved' });
+        targetPanel?.webview.postMessage({ command: 'document-saved', fileSizeBytes });
     }
 
     private async saveDocumentFromWebview(
@@ -283,7 +297,6 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         try {
             const saved = await vscode.workspace.save(document.uri);
             if (saved) {
-                webview.postMessage({ command: 'document-saved' });
                 vscode.window.showInformationMessage(translate(this.packageNls(), 'toast.saved'));
             }
         } catch {
@@ -368,7 +381,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
     }
 
     public async openImageWithEditor(uri?: vscode.Uri): Promise<void> {
-        const target = uri ?? vscode.window.activeTextEditor?.document.uri;
+        const target = uri ?? vscode.window.activeTextEditor?.document.uri ?? this.getActiveTabUri();
         if (!target) {
             const picked = await vscode.window.showOpenDialog({
                 canSelectMany: false,
@@ -385,25 +398,49 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         await vscode.commands.executeCommand('vscode.openWith', target, ImageCustomEditorProvider.viewType);
     }
 
+    private getActiveTabUri(): vscode.Uri | undefined {
+        const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input as { uri?: vscode.Uri } | undefined;
+        return input?.uri;
+    }
+
+    public async runShortcut(action: string): Promise<void> {
+        const panel = Array.from(this.webviews.values()).find(candidate => candidate.active)
+            ?? Array.from(this.webviews.values()).find(candidate => candidate.visible);
+        await panel?.webview.postMessage({ command: 'run-shortcut', action });
+    }
+
     private getHtmlForWebview(
         webview: vscode.Webview,
         initialImageSrc: string,
-        displayFilename: string,
+        initialFileSizeBytes: number | undefined,
         isDocumentEditor = false,
         untitledFilename?: string
     ): string {
         const l10n = this.webviewL10n();
         const lang = resolveLanguageId(vscode.env.language);
+        const extensionVersionLabel = this.getExtensionVersionLabel();
         const l10nEnUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'l10n', 'en.json')));
         const l10nKoUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'l10n', 'ko.json')));
+        const canvasLayoutLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'canvasLayoutLogic.js')));
+        const shortcutLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'shortcutLogic.js')));
+        const zoomLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'zoomLogic.js')));
         const cropMarqueeLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropMarqueeLogic.js')));
         const resizePanelLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'resizePanelLogic.js')));
+        const sharpenLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'sharpenLogic.js')));
+        const colorLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'colorLogic.js')));
+        const magicWandLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'magicWandLogic.js')));
+        const clipboardLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'clipboardLogic.js')));
+        const saveExportLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'saveExportLogic.js')));
+        const historyLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'historyLogic.js')));
+        const transformLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'transformLogic.js')));
+        const loupeLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'loupeLogic.js')));
+        const sidebarAutoCollapseLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'sidebarAutoCollapseLogic.js')));
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.js')));
         const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.css')));
         const cropperJsUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.js')));
         const cropperCssUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.css')));
         const safeImageSrc = initialImageSrc.replace(/"/g, '&quot;');
-        const filename = untitledFilename ?? displayFilename ?? translate(l10n, 'untitled');
+        const safeInitialFileSizeBytes = initialFileSizeBytes != null ? String(initialFileSizeBytes) : '';
         const untitledFilenameAttr = untitledFilename
             ? ` data-untitled-filename="${untitledFilename}"`
             : '';
@@ -417,7 +454,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <link href="${cropperCssUri}" rel="stylesheet">
                 <link href="${styleUri}" rel="stylesheet">
             </head>
-            <body data-document-editor="${isDocumentEditor ? 'true' : 'false'}" data-lang="${lang}" data-l10n-en="${l10nEnUri}" data-l10n-ko="${l10nKoUri}"${untitledFilenameAttr}>
+            <body data-document-editor="${isDocumentEditor ? 'true' : 'false'}" data-lang="${lang}" data-l10n-en="${l10nEnUri}" data-l10n-ko="${l10nKoUri}" data-initial-file-size-bytes="${safeInitialFileSizeBytes}"${untitledFilenameAttr}>
                 <div class="editor-wrapper">
                     <!-- Landing Dashboard Empty State -->
                     <div class="dashboard-empty" id="dashboard" style="display: none;">
@@ -449,19 +486,25 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                     <img id="image" ${safeImageSrc ? `src="${safeImageSrc}"` : ''}>
                                 </div>
                             </div>
-                            <div id="zoomLoupePanel" class="zoom-loupe-panel" style="display: none;">
-                                <span class="zoom-loupe-label" data-i18n="zoomLoupe.label"></span>
-                                <canvas id="zoomLoupeCanvas" width="200" height="200"></canvas>
-                            </div>
+                        </div>
+                        <div id="zoomLoupePanel" class="zoom-loupe-panel" style="display: none;">
+                            <button type="button" id="zoomLoupeDragHandle" class="zoom-loupe-drag-handle" aria-label="Move zoom panel">
+                                <span class="zoom-loupe-drag-mark">+↔</span>
+                            </button>
+                            <span class="zoom-loupe-label" data-i18n="zoomLoupe.label"></span>
+                            <canvas id="zoomLoupeCanvas" width="200" height="200"></canvas>
                         </div>
                         <div class="canvas-toolbar-layer">
                             <div class="floating-toolbar" id="toolbar" style="display: none;">
+                                <button type="button" id="toolbarDragHandle" class="toolbar-drag-handle" aria-label="Move toolbar">
+                                    <span class="toolbar-drag-mark">+↔</span>
+                                </button>
                                 <button class="tb-btn" id="btnZoomOut" data-shortcut="-" data-i18n-title="toolbar.zoomOut">-<span class="ui-shortcut-badge"></span></button>
                                 <span class="zoom-indicator" id="lblZoomPercent">--%</span>
                                 <button class="tb-btn" id="btnZoomIn" data-shortcut="+" data-i18n-title="toolbar.zoomIn">+<span class="ui-shortcut-badge"></span></button>
                                 <div class="tb-divider"></div>
-                                <button class="tb-btn" id="btnRotateLeft" data-shortcut="mod+[" data-i18n-title="toolbar.rotateLeft">⟲<span class="ui-shortcut-badge"></span></button>
-                                <button class="tb-btn" id="btnRotateRight" data-shortcut="mod+]" data-i18n-title="toolbar.rotateRight">⟳<span class="ui-shortcut-badge"></span></button>
+                                <button class="tb-btn" id="btnRotateLeft" data-shortcut="shift+r" data-i18n-title="toolbar.rotateLeft">⟲<span class="ui-shortcut-badge"></span></button>
+                                <button class="tb-btn" id="btnRotateRight" data-shortcut="R" data-i18n-title="toolbar.rotateRight">⟳<span class="ui-shortcut-badge"></span></button>
                                 <button class="tb-btn" id="btnFlipH" data-i18n-title="toolbar.flipH">↔</button>
                                 <button class="tb-btn" id="btnFlipV" data-i18n-title="toolbar.flipV">↕</button>
                                 <div class="tb-divider"></div>
@@ -475,11 +518,18 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <!-- Control Panel -->
                     <div class="sidebar-controls" id="sidebar" style="display: none;">
                         <div class="sidebar-scroll">
-                        <div class="section-card">
-                            <div class="section-title" data-i18n="sidebar.properties"></div>
+                        <div class="section-card section-card-properties">
+                            <div class="section-title section-title-with-version">
+                                <span data-i18n="sidebar.properties"></span>
+                                <span class="section-title-version">${extensionVersionLabel ? `(${extensionVersionLabel})` : ''}</span>
+                            </div>
                             <div style="font-size: 0.8rem; line-height: 1.5; color: #aaa;">
-                                <div><span data-i18n="sidebar.name"></span> <span id="lblFilename">${filename}</span></div>
-                                <div><span data-i18n="sidebar.dimensions"></span> <span id="lblDimensions">0 x 0</span> px</div>
+                                <div><span data-i18n="sidebar.dimensions"></span> <span id="lblDimensions">0 × 0</span> px</div>
+                                <div><span data-i18n="sidebar.fileSize"></span> <span id="lblFileSize">—</span></div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 8px;">
+                                <input type="checkbox" id="chkAutoCollapse">
+                                <label for="chkAutoCollapse" style="font-size: 0.75rem; user-select: none; cursor: pointer;" data-i18n="sidebar.autoCollapse"></label>
                             </div>
                         </div>
 
@@ -516,18 +566,18 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 <div class="input-row">
                                     <div>
                                         <label data-i18n="sidebar.width"></label>
-                                        <input type="number" id="txtWidth" class="form-control" min="1" step="1">
+                                        <input type="number" id="txtWidth" class="form-control" min="1" step="1" inputmode="numeric">
                                     </div>
                                     <div>
                                         <label data-i18n="sidebar.height"></label>
-                                        <input type="number" id="txtHeight" class="form-control" min="1" step="1">
+                                        <input type="number" id="txtHeight" class="form-control" min="1" step="1" inputmode="numeric">
                                     </div>
                                 </div>
                             </div>
                             <div class="control-group">
-                                <label data-i18n-label="sidebar.resizeScale">Scale (<span id="resizeScaleVal">100</span>%)</label>
+                                <label data-i18n-label="sidebar.resizeScale" data-percent-id="resizeScaleVal" data-percent-input="rngResizeScale" data-percent-default="100">Scale (<span id="resizeScaleVal">100</span>%)</label>
                                 <div class="slider-row">
-                                    <input type="range" id="rngResizeScale" min="10" max="200" value="100">
+                                    <input type="range" id="rngResizeScale" min="10" max="200" step="1" value="100">
                                 </div>
                             </div>
                             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
@@ -535,10 +585,15 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 <label for="chkLockRatio" style="font-size: 0.75rem; user-select: none;" data-i18n="sidebar.lockRatio"></label>
                             </div>
                             <button class="btn-accent" id="btnApplyResize" data-i18n="sidebar.applyResize"></button>
-                        </div>
+                            <div class="control-group sharpen-section" id="sharpenSection" style="display: none;">
+                                <label data-i18n-label="sidebar.sharpen" data-percent-id="sharpenVal" data-percent-input="rngSharpen" data-percent-default="0">Sharpen (<span id="sharpenVal">0</span>%)</label>
+                                <div class="slider-row">
+                                    <input type="range" id="rngSharpen" min="0" max="100" value="0" disabled>
+                                </div>
+                                <p class="tool-hint" data-i18n="sidebar.sharpenHint"></p>
+                            </div>
                         </div>
 
-                        <div class="sidebar-bottom">
                         <div class="section-card section-card-history">
                             <div class="section-title" data-i18n="sidebar.history"></div>
                             <div id="historyList" class="history-list"></div>
@@ -556,14 +611,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 </select>
                             </div>
                             <div class="control-group" id="qualitySection" style="display: none;">
-                                <label data-i18n-label="sidebar.quality">Quality (<span id="qualityVal">80</span>%)</label>
+                                <label data-i18n-label="sidebar.quality" data-percent-id="qualityVal" data-percent-input="rngQuality" data-percent-default="80">Quality (<span id="qualityVal">80</span>%)</label>
                                 <div class="slider-row">
                                     <input type="range" id="rngQuality" min="1" max="100" value="80">
                                 </div>
                             </div>
                             <button class="btn-accent" id="btnSave" style="background-color: #28a745; margin-bottom: 8px;" data-shortcut="mod+s"><span data-i18n="sidebar.save"></span><span class="ui-shortcut-badge"></span></button>
                             <button class="btn-accent" id="btnExport" style="background-color: #4e4e4e;" data-i18n="sidebar.exportAs"></button>
-                        </div>
                         </div>
                     </div>
                 </div>
@@ -605,7 +659,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <!-- Floating Eyedropper Tooltip -->
                 <div id="eyedropperTooltip" class="eyedropper-tooltip" style="display: none;" data-i18n="eyedropper.tooltip"></div>
 
-                <!-- Color Picker Tooltip (Option key) -->
+                <!-- Color Picker Tooltip (I key) -->
                 <div id="colorPickerTooltip" class="color-picker-tooltip" style="display: none;">
                     <span class="color-picker-swatch" id="colorPickerSwatch"></span>
                     <span id="colorPickerPreview">#000000</span>
@@ -652,7 +706,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             <button type="button" class="copy-format-btn" data-format="image/webp">WebP</button>
                         </div>
                         <div class="control-group copy-quality-section" id="copyQualitySection" style="display: none;">
-                            <label data-i18n-label="copyModal.quality">Quality (<span id="copyQualityVal">80</span>%)</label>
+                            <label data-i18n-label="copyModal.quality" data-percent-id="copyQualityVal" data-percent-input="rngCopyQuality" data-percent-default="80">Quality (<span id="copyQualityVal">80</span>%)</label>
                             <div class="slider-row">
                                 <input type="range" id="rngCopyQuality" min="1" max="100" value="80">
                             </div>
@@ -669,18 +723,19 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + Z</span><span class="shortcut-desc" data-i18n="shortcuts.undo"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + C</span><span class="shortcut-desc" data-i18n="shortcuts.copyImage"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + A</span><span class="shortcut-desc" data-i18n="shortcuts.selectAll"></span></div>
-                        <div class="shortcut-row"><span class="shortcut-key">Space + Drag</span><span class="shortcut-desc" data-i18n="shortcuts.pan"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">H / Space + Drag</span><span class="shortcut-desc" data-i18n="shortcuts.pan"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Z + Drag</span><span class="shortcut-desc" data-i18n="shortcuts.zoomLoupe"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key" data-i18n="shortcuts.dblClickImageKey"></span><span class="shortcut-desc" data-i18n="shortcuts.dblClickImage"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + 0</span><span class="shortcut-desc" data-i18n="shortcuts.zoomFit"></span></div>
-                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + +</span><span class="shortcut-desc" data-i18n="shortcuts.zoomIn"></span></div>
-                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + −</span><span class="shortcut-desc" data-i18n="shortcuts.zoomOut"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + 1</span><span class="shortcut-desc" data-i18n="shortcuts.zoomActualPixels"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">+</span><span class="shortcut-desc" data-i18n="shortcuts.zoomIn"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">−</span><span class="shortcut-desc" data-i18n="shortcuts.zoomOut"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">[ / ]</span><span class="shortcut-desc" data-i18n="shortcuts.marqueeResize"></span></div>
-                        <div class="shortcut-row"><span class="shortcut-key">⌘/Ctrl + [ / ]</span><span class="shortcut-desc" data-i18n="shortcuts.rotate"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">R / Shift + R</span><span class="shortcut-desc" data-i18n="shortcuts.rotate"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Enter</span><span class="shortcut-desc" data-i18n="shortcuts.applyCrop"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Del / Bksp</span><span class="shortcut-desc" data-i18n="shortcuts.eraseSelection"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Esc</span><span class="shortcut-desc" data-i18n="shortcuts.cancel"></span></div>
-                        <div class="shortcut-row"><span class="shortcut-key">⌥/Alt + Click</span><span class="shortcut-desc" data-i18n="shortcuts.pickColor"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">I + Click</span><span class="shortcut-desc" data-i18n="shortcuts.pickColor"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">↑ ↓ ← →</span><span class="shortcut-desc" data-i18n="shortcuts.moveMarquee"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-desc" data-i18n="shortcuts.toggleCrop"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">W + Click</span><span class="shortcut-desc" data-i18n="shortcuts.magicWand"></span></div>
@@ -688,8 +743,20 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 </div>
 
                 <script src="${cropperJsUri}"></script>
+                <script src="${canvasLayoutLogicUri}"></script>
+                <script src="${shortcutLogicUri}"></script>
+                <script src="${zoomLogicUri}"></script>
                 <script src="${cropMarqueeLogicUri}"></script>
                 <script src="${resizePanelLogicUri}"></script>
+                <script src="${sharpenLogicUri}"></script>
+                <script src="${colorLogicUri}"></script>
+                <script src="${magicWandLogicUri}"></script>
+                <script src="${clipboardLogicUri}"></script>
+                <script src="${saveExportLogicUri}"></script>
+                <script src="${historyLogicUri}"></script>
+                <script src="${transformLogicUri}"></script>
+                <script src="${loupeLogicUri}"></script>
+                <script src="${sidebarAutoCollapseLogicUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
             </html>

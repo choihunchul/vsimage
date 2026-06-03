@@ -13,6 +13,86 @@
         return message;
     }
 
+    function parseFileSizeBytes(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === null || bytes === undefined) {
+            return '—';
+        }
+        const size = Number(bytes);
+        if (!Number.isFinite(size) || size < 0) {
+            return '—';
+        }
+        if (size < 1024) {
+            return `${size} B`;
+        }
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let value = size / 1024;
+        let unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+            value /= 1024;
+            unitIndex += 1;
+        }
+        return `${value.toFixed(1)} ${units[unitIndex]}`;
+    }
+
+    function setFileSizeLabel(bytes) {
+        if (!lblFileSize) {
+            return;
+        }
+        lblFileSize.textContent = formatFileSize(parseFileSizeBytes(bytes));
+    }
+
+    /** applyI18n rebuilds percent labels; always resolve spans by id (no cached refs). */
+    function setPercentSpan(spanId, value) {
+        const el = document.getElementById(spanId);
+        if (el) {
+            el.textContent = String(value);
+        }
+    }
+
+    function syncPercentLabelsFromInputs() {
+        const pairs = resizePanelLogic.PERCENT_LABEL_SYNC_PAIRS || [
+            ['resizeScaleVal', 'rngResizeScale'],
+            ['sharpenVal', 'rngSharpen'],
+            ['qualityVal', 'rngQuality'],
+            ['copyQualityVal', 'rngCopyQuality']
+        ];
+        pairs.forEach(([spanId, inputId]) => {
+            const input = document.getElementById(inputId);
+            if (input) {
+                setPercentSpan(spanId, input.value);
+            }
+        });
+    }
+
+    function normalizeResizeDimensionInput(input) {
+        if (!input) {
+            return '';
+        }
+        const normalize = resizePanelLogic.normalizeResizeDimensionValue || ((value) => {
+            if (value === '' || value === null || value === undefined) {
+                return '';
+            }
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return '';
+            }
+            return String(Math.max(1, Math.trunc(numeric)));
+        });
+        const normalized = normalize(input.value);
+        if (normalized !== input.value) {
+            input.value = normalized;
+        }
+        return normalized;
+    }
+
     function applyI18n(root) {
         const scope = root || document;
         scope.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -25,13 +105,21 @@
             el.title = t(el.getAttribute('data-i18n-title'));
         });
         scope.querySelectorAll('[data-i18n-label]').forEach((el) => {
-            const meta = resizePanelLogic
-                ? resizePanelLogic.resolveI18nPercentLabel(el.innerHTML)
-                : { valueId: 'qualityVal', defaultValue: '80' };
-            const valueEl = el.querySelector(`#${meta.valueId}`);
-            const value = valueEl ? valueEl.textContent : meta.defaultValue;
-            el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="${meta.valueId}">${value}</span>%)`;
+            if (resizePanelLogic.rebuildPercentLabelHtml) {
+                const rebuilt = resizePanelLogic.rebuildPercentLabelHtml(
+                    t(el.getAttribute('data-i18n-label')),
+                    el,
+                    document
+                );
+                el.innerHTML = rebuilt.html;
+            } else {
+                const meta = resizePanelLogic.resolveI18nPercentLabel(el.innerHTML);
+                const valueEl = el.querySelector(`#${meta.valueId}`);
+                const value = valueEl ? valueEl.textContent : meta.defaultValue;
+                el.innerHTML = `${t(el.getAttribute('data-i18n-label'))} (<span id="${meta.valueId}">${value}</span>%)`;
+            }
         });
+        syncPercentLabelsFromInputs();
     }
 
     function usesMacShortcuts() {
@@ -164,16 +252,17 @@
     const txtHeight = document.getElementById('txtHeight');
     const chkLockRatio = document.getElementById('chkLockRatio');
     const rngResizeScale = document.getElementById('rngResizeScale');
-    const resizeScaleVal = document.getElementById('resizeScaleVal');
     const btnApplyResize = document.getElementById('btnApplyResize');
+    const sharpenSection = document.getElementById('sharpenSection');
+    const rngSharpen = document.getElementById('rngSharpen');
     const btnApplyCrop = document.getElementById('btnApplyCrop');
 
     const selFormat = document.getElementById('selFormat');
     const qualitySection = document.getElementById('qualitySection');
     const rngQuality = document.getElementById('rngQuality');
-    const qualityVal = document.getElementById('qualityVal');
 
     const chkEnableCrop = document.getElementById('chkEnableCrop');
+    const chkAutoCollapse = document.getElementById('chkAutoCollapse');
     const lblZoomPercent = document.getElementById('lblZoomPercent');
 
     const historyList = document.getElementById('historyList');
@@ -183,12 +272,16 @@
     let originalHeight = 0;
     let resizeBaseWidth = 0;
     let resizeBaseHeight = 0;
+    let sharpenBaseSrc = null;
+    let sharpenPreviewTimer = null;
     let aspectRatio = 0;
     let isCircular = false;
     let scaleX = 1;
     let scaleY = 1;
     const MAX_HISTORY = 30;
     let historyStack = [];
+    let sidebarAutoCollapseState = { enabled: false, collapsed: false };
+    let sidebarAutoCollapseTimer = null;
     let initialImageSrc = '';
     let isEyedropperActive = false;
     let isColorPickerMode = false;
@@ -199,7 +292,7 @@
     let magicWandOverlayEl = null;
     let magicWandCanvas = null;
     let magicWandCtx = null;
-    let isOptionPressed = false;
+    let isEyedropperShortcutPressed = false;
     let colorPickerCanvas = null;
     let colorPickerCtx = null;
     let lastPickerPreview = '';
@@ -215,8 +308,10 @@
     const colorPickerSwatch = document.getElementById('colorPickerSwatch');
     const colorPickerPreview = document.getElementById('colorPickerPreview');
     const zoomLoupePanel = document.getElementById('zoomLoupePanel');
+    const zoomLoupeDragHandle = document.getElementById('zoomLoupeDragHandle');
     const zoomLoupeCanvas = document.getElementById('zoomLoupeCanvas');
     const zoomLoupeSelection = document.getElementById('zoomLoupeSelection');
+    const toolbarDragHandle = document.getElementById('toolbarDragHandle');
     const zoomLoupeCtx = zoomLoupeCanvas ? zoomLoupeCanvas.getContext('2d') : null;
     const Z_LOUPE_PANEL_PX = 200;
     const Z_LOUPE_SPOT_RADIUS = 24;
@@ -231,7 +326,6 @@
     const copyFormatOptions = document.getElementById('copyFormatOptions');
     const copyQualitySection = document.getElementById('copyQualitySection');
     const rngCopyQuality = document.getElementById('rngCopyQuality');
-    const copyQualityVal = document.getElementById('copyQualityVal');
     const btnCopyConfirm = document.getElementById('btnCopyConfirm');
     const copyScopeSection = document.getElementById('copyScopeSection');
     const chkCopySelectionOnly = document.getElementById('chkCopySelectionOnly');
@@ -242,7 +336,8 @@
     const btnMagicWand = document.getElementById('btnMagicWand');
 
     const lblDimensions = document.getElementById('lblDimensions');
-    const lblFilename = document.getElementById('lblFilename');
+    const lblFileSize = document.getElementById('lblFileSize');
+    let currentFileSizeBytes = parseFileSizeBytes(document.body.dataset.initialFileSizeBytes);
 
     const dashboard = document.getElementById('dashboard');
     const workspace = document.getElementById('workspace');
@@ -263,9 +358,7 @@
     }
 
     function trimHistoryStack() {
-        if (historyStack.length > MAX_HISTORY) {
-            historyStack = historyStack.slice(historyStack.length - MAX_HISTORY);
-        }
+        historyStack = historyLogic.trimSnapshots(historyStack, MAX_HISTORY);
     }
 
     function pushHistorySnapshot(labelKey) {
@@ -292,7 +385,7 @@
         currentBtn.className = 'history-item history-item-current';
         currentBtn.disabled = true;
         currentBtn.appendChild(createHistoryThumb(imageEl.src));
-        currentBtn.appendChild(createHistoryMeta(t('history.current'), t('history.current')));
+        currentBtn.appendChild(createHistoryMeta(t('history.current')));
         historyList.appendChild(currentBtn);
 
         for (let i = historyStack.length - 1; i >= 0; i--) {
@@ -300,6 +393,7 @@
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'history-item';
+            btn.title = `${entry.label} (#${i + 1})`;
             btn.appendChild(createHistoryThumb(entry.src));
             btn.appendChild(createHistoryMeta(entry.label, `#${i + 1}`));
             btn.addEventListener('click', () => restoreHistorySnapshot(i));
@@ -321,21 +415,26 @@
         meta.className = 'history-meta';
         const labelEl = document.createElement('span');
         labelEl.className = 'history-label';
-        labelEl.textContent = label;
-        const stepEl = document.createElement('span');
-        stepEl.className = 'history-step';
-        stepEl.textContent = step;
+        if (step) {
+            labelEl.appendChild(document.createTextNode(label));
+            const stepEl = document.createElement('span');
+            stepEl.className = 'history-step';
+            stepEl.textContent = ` · ${step}`;
+            labelEl.appendChild(stepEl);
+        } else {
+            labelEl.textContent = label;
+        }
         meta.appendChild(labelEl);
-        meta.appendChild(stepEl);
         return meta;
     }
 
     function restoreHistorySnapshot(stackIndex) {
-        if (stackIndex < 0 || stackIndex >= historyStack.length) {
+        const restored = historyLogic.restoreSnapshot(historyStack, stackIndex);
+        if (!restored) {
             return;
         }
-        const entry = historyStack[stackIndex];
-        historyStack = historyStack.slice(0, stackIndex);
+        const entry = restored.entry;
+        historyStack = restored.remaining;
         initEditor(entry.src);
         vscode.postMessage({
             command: 'show-toast',
@@ -391,6 +490,34 @@
         notifyDocumentChanged(labelKey);
     }
 
+    function applyRotationAction(action) {
+        if (!cropper) {
+            return;
+        }
+        const delta = transformLogic.rotationDelta(action);
+        if (delta == null) {
+            return;
+        }
+        markTransformEdit('edit.rotate');
+        cropper.rotate(delta);
+        scheduleSyncLayout();
+    }
+
+    function applyFlipAction(action) {
+        if (!cropper) {
+            return;
+        }
+        const next = transformLogic.nextFlipState({ scaleX, scaleY }, action);
+        markTransformEdit(action === 'flipH' ? 'edit.flipH' : 'edit.flipV');
+        scaleX = next.scaleX;
+        scaleY = next.scaleY;
+        if (action === 'flipH') {
+            cropper.scaleX(scaleX);
+        } else if (action === 'flipV') {
+            cropper.scaleY(scaleY);
+        }
+    }
+
     function respondWithImageData(requestId) {
         if (!window.editorApi || !window.editorApi.getCanvasBlob) {
             vscode.postMessage({ command: 'image-data-response', requestId, arrayBuffer: null, mimeType: 'image/png' });
@@ -432,18 +559,16 @@
         }
         clearNaturalCropData();
         initialImageSrc = null;
+        currentFileSizeBytes = null;
+        setFileSizeLabel(currentFileSizeBytes);
         imageEl.removeAttribute('src');
         imageEl.src = '';
         hideEditorChrome();
         dashboard.style.display = 'flex';
         workspace.style.display = 'none';
-        const untitledName = document.body.dataset.untitledFilename;
-        if (untitledName && lblFilename) {
-            lblFilename.textContent = untitledName;
-        }
     }
 
-    function revertToSource(src, filename) {
+    function revertToSource(src, fileSizeBytes) {
         historyStack = [];
         renderHistoryPanel();
         endEyedropper();
@@ -454,9 +579,8 @@
         clearMagicWandMask();
         endMagicWandMode(false);
         initialImageSrc = src;
-        if (filename && lblFilename) {
-            lblFilename.textContent = filename;
-        }
+        currentFileSizeBytes = parseFileSizeBytes(fileSizeBytes);
+        setFileSizeLabel(currentFileSizeBytes);
         initEditor(src, { preserveInitialSrc: true });
         vscode.postMessage({ command: 'show-toast', text: t('toast.reverted') });
     }
@@ -468,7 +592,7 @@
                 respondWithImageData(message.requestId);
                 break;
             case 'revert-document':
-                revertToSource(message.src, message.filename);
+                revertToSource(message.src, message.fileSizeBytes);
                 break;
             case 'revert-untitled':
                 revertUntitledEditor();
@@ -476,7 +600,14 @@
             case 'perform-undo':
                 performUndo({ fromHost: true });
                 break;
+            case 'run-shortcut':
+                runShortcutAction(message.action);
+                break;
             case 'document-saved':
+                if (Object.prototype.hasOwnProperty.call(message, 'fileSizeBytes')) {
+                    currentFileSizeBytes = parseFileSizeBytes(message.fileSizeBytes);
+                    setFileSizeLabel(currentFileSizeBytes);
+                }
                 break;
         }
     });
@@ -488,16 +619,22 @@
     const canvasScrollContent = document.getElementById('canvasScrollContent');
     const imageContainer = document.getElementById('imageContainer');
     const RULER_SIZE = 20; // px — must match CSS --ruler-size
-    const CANVAS_PADDING = 20; // px — must match .canvas-scroll-content padding
+    const CANVAS_PADDING = 0; // px — must match .canvas-scroll-content padding
     let expandingContainer = false;
     let expandContainerFrame = null;
     let isSpacePressed = false;
+    let isHandPressed = false;
     let isZLoupeActive = false;
     let isZLoupeDragging = false;
     let zLoupeDragStart = null;
+    let isZoomLoupePanelDragging = false;
+    let zoomLoupePanelDragState = null;
+    let isToolbarDragging = false;
+    let toolbarDragState = null;
     let isPanning = false;
     let lastPanClientX = 0;
     let lastPanClientY = 0;
+    let suppressCropCheckboxAutoEnable = false;
 
     function scheduleSyncLayout() {
         if (expandContainerFrame !== null) {
@@ -506,6 +643,12 @@
         expandContainerFrame = requestAnimationFrame(() => {
             expandContainerFrame = null;
             syncLayoutAfterZoom();
+            if (toolbar && toolbar.style.position === 'absolute') {
+                const currentPosition = getToolbarCurrentPosition();
+                if (currentPosition) {
+                    placeToolbar(currentPosition.left, currentPosition.top);
+                }
+            }
         });
     }
 
@@ -513,19 +656,52 @@
         if (!cropper) {
             return;
         }
-        if (isSpacePressed || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+        if (isPanShortcutPressed() || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             cropper.setDragMode('none');
             return;
         }
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
     }
 
+    const canvasLayoutLogic = globalThis.VsimageCanvasLayoutLogic || {
+        computeCanvasViewportLayout: (viewportW, viewportH, canvasW, canvasH) => ({
+            contentWidth: Math.max(viewportW, canvasW),
+            contentHeight: Math.max(viewportH, canvasH),
+            marginLeft: 0,
+            marginTop: 0
+        })
+    };
+    const shortcutLogic = globalThis.VsimageShortcutLogic || {
+        getShortcutAction: () => null,
+        isPanHoldCode: (code) => code === 'Space' || code === 'KeyH',
+        isEyedropperHoldCode: (code) => code === 'KeyI'
+    };
+    const zoomLogic = globalThis.VsimageZoomLogic || {
+        getImageZoomRatioFromData: (data) => (data && data.naturalWidth ? data.width / data.naturalWidth : null),
+        zoomRatioToPercent: (r) => Math.round(Number(r) * 100),
+        computeRatioAfterCropperRelativeZoom: (current, delta) => (
+            delta < 0 ? current / (1 - delta) : current * (1 + delta)
+        ),
+        ratioAfterZoomAction: (current, action) => (
+            action === 'zoomIn'
+                ? current * 1.1
+                : action === 'zoomOut'
+                    ? current / 1.1
+                    : null
+        ),
+        getCanvasSizeForZoomRatio: (w, h, ratio) => ({ width: w * ratio, height: h * ratio }),
+        resolveFinalZoomRatioAfterCropRestore: (intended, after) => intended ?? after ?? 1,
+        isImageZoomBelowFull: (r) => Math.abs(r - 1) >= 0.005,
+        resolveToggleZoomTargetRatio: (cur, fit) => (Math.abs(cur - 1) < 0.005 ? fit : 1)
+    };
     const cropMarqueeLogic = globalThis.VsimageCropMarqueeLogic || {
         clampCropBox: (x, y, w, h, ow, oh) => ({ x, y, width: w, height: h }),
         isMarqueeFullImageNatural: () => false,
         isPointInCropSelection: () => false,
         shouldInvokeMarqueeDblClickToggle: () => false,
-        shouldInvokeImageZoomDblClick: () => false
+        shouldInvokeImageZoomDblClick: () => false,
+        shouldSnapshotCropForZoom: (cropped, data) => Boolean(cropped) && data && data.width > 0,
+        cloneNaturalCropSnapshot: (data) => (data ? Object.assign({}, data) : null)
     };
     const resizePanelLogic = globalThis.VsimageResizePanelLogic || {
         buildResizePanelFromImage: (w, h) => ({
@@ -541,8 +717,167 @@
             width: Math.max(1, Math.round(bw * p / 100)),
             height: Math.max(1, Math.round(bh * p / 100))
         }),
-        resolveI18nPercentLabel: () => ({ valueId: 'qualityVal', defaultValue: '80' })
+        resolveI18nPercentLabel: () => ({ valueId: 'qualityVal', defaultValue: '80' }),
+        resolvePercentLabelMeta: (el, html) => {
+            const spanId = el && el.getAttribute && el.getAttribute('data-percent-id');
+            if (spanId) {
+                return {
+                    valueId: spanId,
+                    inputId: el.getAttribute('data-percent-input'),
+                    defaultValue: el.getAttribute('data-percent-default') || '0'
+                };
+            }
+            return { valueId: 'qualityVal', defaultValue: '80' };
+        },
+        getPercentLabelDisplayValue: (meta, el) => {
+            if (meta.inputId) {
+                const input = document.getElementById(meta.inputId);
+                if (input) {
+                    return String(input.value);
+                }
+            }
+            const span = el && el.querySelector && el.querySelector(`#${meta.valueId}`);
+            return span && span.textContent ? span.textContent.trim() : meta.defaultValue;
+        },
+        PERCENT_LABEL_SYNC_PAIRS: [
+            ['resizeScaleVal', 'rngResizeScale'],
+            ['sharpenVal', 'rngSharpen'],
+            ['qualityVal', 'rngQuality'],
+            ['copyQualityVal', 'rngCopyQuality']
+        ],
+        getViewportFillRatio: (aw, ah, iw, ih) => Math.min(aw / iw, ah / ih),
+        resolveZoomRatioAfterResize: (fill, panelPct, preferred) => {
+            if (panelPct == null || panelPct >= 100) {
+                const capped = Math.min(fill, 1);
+                const r = preferred != null && preferred > 0 ? preferred : capped;
+                return Math.min(r, capped);
+            }
+            const prior = preferred != null && preferred > 0 ? preferred : 1;
+            return fill < 1 || prior < 1 ? fill : Math.min(prior, fill);
+        },
+        rebuildPercentLabelHtml: (translated, el) => {
+            const meta = el.getAttribute && el.getAttribute('data-percent-id')
+                ? {
+                    valueId: el.getAttribute('data-percent-id'),
+                    inputId: el.getAttribute('data-percent-input'),
+                    defaultValue: el.getAttribute('data-percent-default') || '80'
+                }
+                : { valueId: 'qualityVal', defaultValue: '80', inputId: null };
+            const input = meta.inputId ? document.getElementById(meta.inputId) : null;
+            const value = input ? String(input.value) : meta.defaultValue;
+            return {
+                html: `${translated} (<span id="${meta.valueId}">${value}</span>%)`,
+                valueId: meta.valueId,
+                value
+            };
+        },
+        computeHalveDownscaleSteps: (sw, sh, tw, th) => {
+            const steps = [];
+            let w = sw;
+            let h = sh;
+            while (w > tw * 2 || h > th * 2) {
+                w = Math.max(tw, Math.floor(w / 2));
+                h = Math.max(th, Math.floor(h / 2));
+                steps.push({ w, h });
+            }
+            if (!steps.length || steps[steps.length - 1].w !== tw || steps[steps.length - 1].h !== th) {
+                steps.push({ w: tw, h: th });
+            }
+            return steps;
+        },
+        computeDownscaleSteps: (sw, sh, tw, th) => {
+            const factor = 0.75;
+            const steps = [];
+            let w = sw;
+            let h = sh;
+            let guard = 0;
+            while ((w > tw * 1.02 || h > th * 1.02) && guard++ < 80) {
+                const nw = Math.max(tw, Math.floor(w * factor));
+                const nh = Math.max(th, Math.floor(h * factor));
+                if (nw === w && nh === h) {
+                    break;
+                }
+                steps.push({ w: nw, h: nh });
+                w = nw;
+                h = nh;
+            }
+            if (w !== tw || h !== th) {
+                steps.push({ w: tw, h: th });
+            }
+            return steps;
+        }
     };
+
+    const sharpenLogic = globalThis.VsimageSharpenLogic || {
+        amountFromSlider: (p) => (Math.max(0, Math.min(100, Number(p) || 0)) / 100) * 0.85,
+        applyUnsharpMask: (canvas) => canvas
+    };
+    const colorLogic = globalThis.VsimageColorLogic || {
+        buildColorFormats: (r, g, b, a) => {
+            const hexByte = (n) => n.toString(16).padStart(2, '0').toUpperCase();
+            const alpha = a / 255;
+            const hex = a < 255
+                ? `#${hexByte(r)}${hexByte(g)}${hexByte(b)}${hexByte(a)}`
+                : `#${hexByte(r)}${hexByte(g)}${hexByte(b)}`;
+            return [
+                { label: 'HEX', value: hex },
+                { label: 'RGB', value: `rgb(${r}, ${g}, ${b})` },
+                { label: 'RGBA', value: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})` }
+            ];
+        }
+    };
+    const magicWandLogic = globalThis.VsimageMagicWandLogic;
+    const clipboardLogic = globalThis.VsimageClipboardLogic;
+    const saveExportLogic = globalThis.VsimageSaveExportLogic || {
+        resolveSaveStart: (type, documentEditor) => (
+            type === 'save' && documentEditor
+                ? { immediateMessage: { command: 'save-document' }, needsBlob: false }
+                : { immediateMessage: null, needsBlob: true }
+        ),
+        commandForBlobType: (type) => (type === 'save' ? 'save-image' : 'export-image')
+    };
+    const sidebarAutoCollapseLogic = globalThis.VsimageSidebarAutoCollapseLogic || {
+        SIDEBAR_AUTO_COLLAPSE_DELAY_MS: 240,
+        getSidebarAutoCollapseDelayMs: () => 240,
+        createSidebarAutoCollapseState: () => ({ enabled: false, collapsed: false }),
+        setSidebarAutoCollapseEnabled: (_state, enabled) => ({
+            enabled: !!enabled,
+            collapsed: false
+        }),
+        handleSidebarAutoCollapseMouseEnter: (state) => (
+            state && state.enabled
+                ? { enabled: true, collapsed: false }
+                : state
+        ),
+        handleSidebarAutoCollapseMouseLeave: (state) => (
+            state && state.enabled
+                ? { enabled: true, collapsed: true }
+                : state
+        )
+    };
+    sidebarAutoCollapseState = sidebarAutoCollapseLogic.createSidebarAutoCollapseState
+        ? sidebarAutoCollapseLogic.createSidebarAutoCollapseState()
+        : { enabled: false, collapsed: false };
+    const historyLogic = globalThis.VsimageHistoryLogic || {
+        trimSnapshots: (entries, max) => (
+            entries.length > max ? entries.slice(entries.length - max) : entries.slice()
+        ),
+        restoreSnapshot: (entries, index) => (
+            index < 0 || index >= entries.length
+                ? null
+                : { entry: entries[index], remaining: entries.slice(0, index) }
+        )
+    };
+    const transformLogic = globalThis.VsimageTransformLogic || {
+        rotationDelta: (action) => (
+            action === 'rotateLeft' ? -90 : action === 'rotateRight' ? 90 : null
+        ),
+        nextFlipState: (state, action) => ({
+            scaleX: action === 'flipH' ? -state.scaleX : state.scaleX,
+            scaleY: action === 'flipV' ? -state.scaleY : state.scaleY
+        })
+    };
+    const loupeLogic = globalThis.VsimageLoupeLogic;
 
     function clampCropBox(x, y, width, height) {
         return cropMarqueeLogic.clampCropBox(x, y, width, height, originalWidth, originalHeight);
@@ -616,7 +951,7 @@
         if (!ensureCropMarqueeForKeyboard()) {
             return false;
         }
-        if (isSpacePressed || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+        if (isPanShortcutPressed() || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             return false;
         }
 
@@ -653,7 +988,7 @@
         if (!ensureCropMarqueeForKeyboard()) {
             return false;
         }
-        if (isSpacePressed || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
+        if (isPanShortcutPressed() || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             return false;
         }
 
@@ -683,9 +1018,26 @@
     }
 
     function cacheNaturalCropData() {
-        if (cropper && chkEnableCrop.checked && cropper.cropped) {
+        if (cropper && cropper.cropped) {
             lastNaturalCropData = cropper.getData(true);
         }
+    }
+
+    function snapshotNaturalCropForZoom() {
+        if (!cropper || !cropper.cropped) {
+            return null;
+        }
+        return cropMarqueeLogic.cloneNaturalCropSnapshot(cropper.getData(true));
+    }
+
+    /** Re-apply natural crop after zoom so the marquee scales with the image. */
+    function restoreCropMarqueeAfterZoom(naturalData) {
+        if (!cropper || !cropper.cropped || !cropMarqueeLogic.shouldSnapshotCropForZoom(true, naturalData)) {
+            return;
+        }
+        cropper.setData(naturalData);
+        updateResizeInputsFromCrop();
+        cacheNaturalCropData();
     }
 
     function clearNaturalCropData() {
@@ -702,43 +1054,6 @@
         el.style.overflow = 'visible';
         cropper.containerData.width = w;
         cropper.containerData.height = h;
-    }
-
-    function preExpandContainerForSize(targetW, targetH) {
-        if (!cropper) {
-            return;
-        }
-        const cw = cropper.containerData.width;
-        const ch = cropper.containerData.height;
-        if (targetW > cw || targetH > ch) {
-            setCropperContainerSize(
-                Math.max(Math.ceil(targetW), cw),
-                Math.max(Math.ceil(targetH), ch)
-            );
-        }
-    }
-
-    function scaleCropBoxAfterZoom(prevCanvas, prevBox) {
-        if (!cropper || !prevCanvas || !prevBox || !chkEnableCrop.checked || !cropper.cropped) {
-            return;
-        }
-        const canvas = cropper.getCanvasData();
-        if (!canvas.width || !prevCanvas.width) {
-            return;
-        }
-        const factor = canvas.width / prevCanvas.width;
-        if (Math.abs(factor - 1) < 0.0001) {
-            return;
-        }
-        const relLeft = prevBox.left - prevCanvas.left;
-        const relTop = prevBox.top - prevCanvas.top;
-        cropper.setCropBoxData({
-            left: canvas.left + relLeft * factor,
-            top: canvas.top + relTop * factor,
-            width: prevBox.width * factor,
-            height: prevBox.height * factor
-        });
-        cacheNaturalCropData();
     }
 
     function normalizeCanvasOrigin() {
@@ -768,16 +1083,6 @@
         }
     }
 
-    function snapshotCropState() {
-        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
-            return { canvas: null, box: null };
-        }
-        return {
-            canvas: Object.assign({}, cropper.getCanvasData()),
-            box: Object.assign({}, cropper.getCropBoxData())
-        };
-    }
-
     /** Keep cropper container, scroll area, and canvas in sync after zoom/rotate. */
     function syncLayoutAfterZoom() {
         if (!cropper || expandingContainer || isPanning) {
@@ -805,18 +1110,20 @@
 
             const viewportW = canvasScrollArea.clientWidth;
             const viewportH = canvasScrollArea.clientHeight;
-            const totalW = w + (CANVAS_PADDING * 2);
-            const totalH = h + (CANVAS_PADDING * 2);
-            const contentW = Math.max(viewportW, totalW);
-            const contentH = Math.max(viewportH, totalH);
+            const layout = canvasLayoutLogic.computeCanvasViewportLayout(
+                viewportW,
+                viewportH,
+                w,
+                h
+            );
 
             imgContainerEl.style.width = w + 'px';
             imgContainerEl.style.height = h + 'px';
-            imgContainerEl.style.marginLeft = contentW > totalW ? Math.floor((contentW - totalW) / 2) + 'px' : '0';
-            imgContainerEl.style.marginTop = contentH > totalH ? Math.floor((contentH - totalH) / 2) + 'px' : '0';
+            imgContainerEl.style.marginLeft = layout.marginLeft + 'px';
+            imgContainerEl.style.marginTop = layout.marginTop + 'px';
 
-            canvasScrollContent.style.width = contentW + 'px';
-            canvasScrollContent.style.height = contentH + 'px';
+            canvasScrollContent.style.width = layout.contentWidth + 'px';
+            canvasScrollContent.style.height = layout.contentHeight + 'px';
         } finally {
             expandingContainer = false;
         }
@@ -829,36 +1136,47 @@
         if (!cropper) {
             return;
         }
-        const snap = snapshotCropState();
-        if (delta > 0 && snap.canvas) {
-            preExpandContainerForSize(
-                snap.canvas.width * (1 + delta),
-                snap.canvas.height * (1 + delta)
-            );
+        const currentRatio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData());
+        const nextRatio = zoomLogic.computeRatioAfterCropperRelativeZoom(currentRatio, delta);
+        if (nextRatio != null) {
+            applyZoomTo(nextRatio);
         }
-        cropper.zoom(delta);
-        scaleCropBoxAfterZoom(snap.canvas, snap.box);
-        syncLayoutAfterZoom();
+    }
+
+    function applyZoomAction(action) {
+        if (!cropper) {
+            return;
+        }
+        const currentRatio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData());
+        const nextRatio = zoomLogic.ratioAfterZoomAction(currentRatio, action);
+        if (nextRatio != null) {
+            applyZoomTo(nextRatio);
+        }
     }
 
     function applyZoomTo(ratio) {
         if (!cropper) {
             return;
         }
-        const snap = snapshotCropState();
-        const cd = snap.canvas || cropper.getCanvasData();
+        cacheNaturalCropData();
+        const cropSnap = snapshotNaturalCropForZoom();
+        const cd = cropper.getCanvasData();
         if (cd && cd.naturalWidth) {
-            preExpandContainerForSize(cd.naturalWidth * ratio, cd.naturalHeight * ratio);
+            const target = zoomLogic.getCanvasSizeForZoomRatio(cd.naturalWidth, cd.naturalHeight, ratio);
+            if (target) {
+                setCropperContainerSize(Math.ceil(target.width), Math.ceil(target.height));
+            }
         }
         cropper.zoomTo(ratio);
-        if (snap.canvas && snap.box) {
-            scaleCropBoxAfterZoom(snap.canvas, snap.box);
-        } else if (lastNaturalCropData && chkEnableCrop.checked && cropper.cropped) {
-            cropper.setData(lastNaturalCropData);
-            updateResizeInputsFromCrop();
-            cacheNaturalCropData();
-        }
+        restoreCropMarqueeAfterZoom(cropSnap);
         syncLayoutAfterZoom();
+        restoreCropMarqueeAfterZoom(cropSnap);
+        const finalRatio = zoomLogic.resolveFinalZoomRatioAfterCropRestore(
+            ratio,
+            zoomLogic.getImageZoomRatioFromData(cropper.getImageData())
+        );
+        cropper.zoomTo(finalRatio);
+        updateZoomIndicator();
     }
 
     function drawRulers() {
@@ -1061,6 +1379,10 @@
         return workspace && workspace.style.display !== 'none';
     }
 
+    function isPanShortcutPressed() {
+        return isSpacePressed || isHandPressed;
+    }
+
     function setPanMode(active) {
         if (canvasScrollArea) {
             canvasScrollArea.classList.toggle('pan-mode', active);
@@ -1083,29 +1405,42 @@
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.code !== 'Space' || e.repeat || isTypingTarget(document.activeElement)) {
+        if (!shortcutLogic.isPanHoldCode(e.code) || e.repeat || isTypingTarget(document.activeElement)) {
             return;
         }
         if (!isPanTargetVisible()) {
             return;
         }
         e.preventDefault();
-        isSpacePressed = true;
+        if (e.code === 'Space') {
+            isSpacePressed = true;
+        }
+        if (e.code === 'KeyH') {
+            isHandPressed = true;
+        }
         setPanMode(true);
     });
 
     document.addEventListener('keyup', (e) => {
-        if (e.code !== 'Space') {
+        if (!shortcutLogic.isPanHoldCode(e.code)) {
             return;
         }
-        isSpacePressed = false;
-        endPanning();
-        setPanMode(false);
+        if (e.code === 'Space') {
+            isSpacePressed = false;
+        }
+        if (e.code === 'KeyH') {
+            isHandPressed = false;
+        }
+        if (!isPanShortcutPressed()) {
+            endPanning();
+        }
+        setPanMode(isPanShortcutPressed());
         scheduleSyncLayout();
     });
 
     window.addEventListener('blur', () => {
         isSpacePressed = false;
+        isHandPressed = false;
         endPanning();
         setPanMode(false);
         setZLoupeActive(false);
@@ -1117,7 +1452,7 @@
             && !isEyedropperActive
             && !isColorPickerMode
             && !isMagicWandMode
-            && !isSpacePressed);
+            && !isPanShortcutPressed());
     }
 
     function setZLoupeActive(active) {
@@ -1139,6 +1474,7 @@
     }
 
     function hideZoomLoupe() {
+        stopZoomLoupePanelDrag();
         if (zoomLoupePanel) {
             zoomLoupePanel.style.display = 'none';
         }
@@ -1150,27 +1486,263 @@
         }
     }
 
-    function clampNaturalRect(x, y, width, height) {
-        const w = Math.max(1, Math.min(width, originalWidth));
-        const h = Math.max(1, Math.min(height, originalHeight));
-        const maxX = Math.max(0, originalWidth - w);
-        const maxY = Math.max(0, originalHeight - h);
+    function getToolbarLayer() {
+        return toolbar && toolbar.parentElement ? toolbar.parentElement : null;
+    }
+
+    function getToolbarBounds() {
+        const layer = getToolbarLayer();
+        if (!layer) {
+            return null;
+        }
         return {
-            x: Math.max(0, Math.min(maxX, x)),
-            y: Math.max(0, Math.min(maxY, y)),
-            width: w,
-            height: h
+            width: layer.clientWidth,
+            height: layer.clientHeight
         };
     }
 
+    function getToolbarSize() {
+        if (!toolbar) {
+            return null;
+        }
+        return {
+            width: toolbar.offsetWidth,
+            height: toolbar.offsetHeight
+        };
+    }
+
+    function getToolbarCurrentPosition() {
+        if (!toolbar) {
+            return null;
+        }
+        const left = parseFloat(toolbar.style.left);
+        const top = parseFloat(toolbar.style.top);
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+            return { left, top };
+        }
+        const layer = getToolbarLayer();
+        const size = getToolbarSize();
+        if (!layer || !size) {
+            return null;
+        }
+        return {
+            left: Math.max(8, (layer.clientWidth - size.width) / 2),
+            top: Math.max(8, layer.clientHeight - size.height - 20)
+        };
+    }
+
+    function clampToolbarPosition(left, top) {
+        const bounds = getToolbarBounds();
+        const size = getToolbarSize();
+        if (!bounds || !size || !Number.isFinite(left) || !Number.isFinite(top)) {
+            return null;
+        }
+
+        const margin = 8;
+        const maxLeft = Math.max(margin, bounds.width - size.width - margin);
+        const maxTop = Math.max(margin, bounds.height - size.height - margin);
+
+        return {
+            left: Math.min(Math.max(margin, left), maxLeft),
+            top: Math.min(Math.max(margin, top), maxTop)
+        };
+    }
+
+    function placeToolbar(left, top) {
+        if (!toolbar) {
+            return;
+        }
+        const clamped = clampToolbarPosition(left, top);
+        if (!clamped) {
+            return;
+        }
+        toolbar.style.position = 'absolute';
+        toolbar.style.left = `${clamped.left}px`;
+        toolbar.style.top = `${clamped.top}px`;
+        toolbar.style.right = 'auto';
+        toolbar.style.bottom = 'auto';
+        toolbar.style.transform = 'none';
+    }
+
+    function stopToolbarDrag() {
+        isToolbarDragging = false;
+        toolbarDragState = null;
+    }
+
+    function startToolbarDrag(e) {
+        if (!toolbar || !toolbarDragHandle || e.button !== 0) {
+            return;
+        }
+        const layer = getToolbarLayer();
+        if (!layer) {
+            return;
+        }
+
+        const toolbarRect = toolbar.getBoundingClientRect();
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget && e.currentTarget.setPointerCapture) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+        }
+
+        placeToolbar(toolbarRect.left - layer.getBoundingClientRect().left, toolbarRect.top - layer.getBoundingClientRect().top);
+        toolbarDragState = {
+            pointerId: e.pointerId,
+            offsetX: e.clientX - toolbarRect.left,
+            offsetY: e.clientY - toolbarRect.top
+        };
+        isToolbarDragging = true;
+    }
+
+    function moveToolbarDrag(e) {
+        if (!isToolbarDragging || !toolbarDragState || e.pointerId !== toolbarDragState.pointerId) {
+            return;
+        }
+        const layer = getToolbarLayer();
+        if (!layer) {
+            return;
+        }
+
+        e.preventDefault();
+
+        const layerRect = layer.getBoundingClientRect();
+        placeToolbar(
+            e.clientX - layerRect.left - toolbarDragState.offsetX,
+            e.clientY - layerRect.top - toolbarDragState.offsetY
+        );
+    }
+
+    function getZoomLoupePanelBounds() {
+        if (!zoomLoupePanel || !workspace) {
+            return null;
+        }
+        return {
+            width: workspace.clientWidth,
+            height: workspace.clientHeight
+        };
+    }
+
+    function getZoomLoupePanelSize() {
+        if (!zoomLoupePanel) {
+            return null;
+        }
+        return {
+            width: zoomLoupePanel.offsetWidth,
+            height: zoomLoupePanel.offsetHeight
+        };
+    }
+
+    function getZoomLoupePanelCurrentPosition() {
+        if (!zoomLoupePanel) {
+            return null;
+        }
+        const left = parseFloat(zoomLoupePanel.style.left);
+        const top = parseFloat(zoomLoupePanel.style.top);
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+            return { left, top };
+        }
+        const bounds = getZoomLoupePanelBounds();
+        const size = getZoomLoupePanelSize();
+        if (!bounds || !size) {
+            return null;
+        }
+        return {
+            left: Math.max(12, bounds.width - size.width - 12),
+            top: Math.max(12, bounds.height - size.height - 12)
+        };
+    }
+
+    function clampZoomLoupePanelPosition(left, top) {
+        const bounds = getZoomLoupePanelBounds();
+        const size = getZoomLoupePanelSize();
+        if (!bounds || !size || !Number.isFinite(left) || !Number.isFinite(top)) {
+            return null;
+        }
+
+        const margin = 12;
+        const maxLeft = Math.max(margin, bounds.width - size.width - margin);
+        const maxTop = Math.max(margin, bounds.height - size.height - margin);
+
+        return {
+            left: Math.min(Math.max(margin, left), maxLeft),
+            top: Math.min(Math.max(margin, top), maxTop)
+        };
+    }
+
+    function placeZoomLoupePanel(left, top) {
+        if (!zoomLoupePanel) {
+            return;
+        }
+        const clamped = clampZoomLoupePanelPosition(left, top);
+        if (!clamped) {
+            return;
+        }
+        zoomLoupePanel.style.left = `${clamped.left}px`;
+        zoomLoupePanel.style.top = `${clamped.top}px`;
+        zoomLoupePanel.style.right = 'auto';
+        zoomLoupePanel.style.bottom = 'auto';
+    }
+
+    function stopZoomLoupePanelDrag() {
+        isZoomLoupePanelDragging = false;
+        zoomLoupePanelDragState = null;
+    }
+
+    function startZoomLoupePanelDrag(e) {
+        if (!zoomLoupePanel || !workspace || e.button !== 0) {
+            return;
+        }
+
+        const panelRect = zoomLoupePanel.getBoundingClientRect();
+        const workspaceRect = workspace.getBoundingClientRect();
+        const currentLeft = Number.isFinite(parseFloat(zoomLoupePanel.style.left))
+            ? parseFloat(zoomLoupePanel.style.left)
+            : panelRect.left - workspaceRect.left;
+        const currentTop = Number.isFinite(parseFloat(zoomLoupePanel.style.top))
+            ? parseFloat(zoomLoupePanel.style.top)
+            : panelRect.top - workspaceRect.top;
+
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget && e.currentTarget.setPointerCapture) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+        }
+
+        placeZoomLoupePanel(currentLeft, currentTop);
+        zoomLoupePanelDragState = {
+            pointerId: e.pointerId,
+            offsetX: e.clientX - panelRect.left,
+            offsetY: e.clientY - panelRect.top
+        };
+        isZoomLoupePanelDragging = true;
+    }
+
+    function moveZoomLoupePanelDrag(e) {
+        if (!isZoomLoupePanelDragging || !zoomLoupePanelDragState || e.pointerId !== zoomLoupePanelDragState.pointerId || !workspace) {
+            return;
+        }
+
+        e.preventDefault();
+
+        const workspaceRect = workspace.getBoundingClientRect();
+        placeZoomLoupePanel(
+            e.clientX - workspaceRect.left - zoomLoupePanelDragState.offsetX,
+            e.clientY - workspaceRect.top - zoomLoupePanelDragState.offsetY
+        );
+    }
+
+    function clampNaturalRect(x, y, width, height) {
+        return loupeLogic.clampNaturalRect(x, y, width, height, originalWidth, originalHeight);
+    }
+
     function getNaturalRectFromPoints(start, end) {
-        const x0 = Math.min(start.x, end.x);
-        const y0 = Math.min(start.y, end.y);
-        const x1 = Math.max(start.x, end.x);
-        const y1 = Math.max(start.y, end.y);
-        const width = Math.max(Z_LOUPE_MIN_DRAG, x1 - x0 + 1);
-        const height = Math.max(Z_LOUPE_MIN_DRAG, y1 - y0 + 1);
-        return clampNaturalRect(x0, y0, width, height);
+        return loupeLogic.getNaturalRectFromPoints(
+            start,
+            end,
+            Z_LOUPE_MIN_DRAG,
+            originalWidth,
+            originalHeight
+        );
     }
 
     function naturalRectToClientBounds(rect) {
@@ -1179,17 +1751,7 @@
         }
         const imageData = cropper.getImageData();
         const containerRect = cropper.container.getBoundingClientRect();
-        if (!imageData.width || !imageData.naturalWidth) {
-            return null;
-        }
-        const scaleX = imageData.width / imageData.naturalWidth;
-        const scaleY = imageData.height / imageData.naturalHeight;
-        return {
-            left: containerRect.left + imageData.left + rect.x * scaleX,
-            top: containerRect.top + imageData.top + rect.y * scaleY,
-            width: rect.width * scaleX,
-            height: rect.height * scaleY
-        };
+        return loupeLogic.naturalRectToClientBounds(rect, imageData, containerRect);
     }
 
     function drawZoomLoupeRegion(rect) {
@@ -1197,6 +1759,10 @@
             return;
         }
         zoomLoupePanel.style.display = 'flex';
+        const currentPosition = getZoomLoupePanelCurrentPosition();
+        if (currentPosition && Number.isFinite(parseFloat(zoomLoupePanel.style.left)) && Number.isFinite(parseFloat(zoomLoupePanel.style.top))) {
+            placeZoomLoupePanel(currentPosition.left, currentPosition.top);
+        }
         zoomLoupeCtx.imageSmoothingEnabled = true;
         zoomLoupeCtx.imageSmoothingQuality = 'high';
         zoomLoupeCtx.clearRect(0, 0, Z_LOUPE_PANEL_PX, Z_LOUPE_PANEL_PX);
@@ -1309,7 +1875,7 @@
     });
 
     function onPanMouseDown(e) {
-        if (!isSpacePressed || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
+        if (!isPanShortcutPressed() || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
             return;
         }
         if (!isPanTargetVisible()) {
@@ -1342,7 +1908,7 @@
     }
 
     document.addEventListener('mousedown', (e) => {
-        if (!isSpacePressed || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
+        if (!isPanShortcutPressed() || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
             return;
         }
         if (!isPanTargetVisible()) {
@@ -1377,18 +1943,95 @@
         if (toolbar) {
             toolbar.style.display = 'flex';
         }
+        applySidebarAutoCollapseState();
     }
 
     function hideEditorChrome() {
+        cancelSidebarAutoCollapseTimer();
+        stopToolbarDrag();
         if (sidebar) {
             sidebar.style.display = 'none';
+            sidebar.classList.remove('sidebar-controls-collapsed');
         }
         if (toolbar) {
             toolbar.style.display = 'none';
         }
     }
 
+    function applySidebarAutoCollapseState() {
+        if (!sidebar) {
+            return;
+        }
+        sidebar.classList.toggle('sidebar-controls-collapsed', !!(sidebarAutoCollapseState.enabled && sidebarAutoCollapseState.collapsed));
+    }
+
+    function setSidebarAutoCollapseState(nextState) {
+        sidebarAutoCollapseState = nextState;
+        applySidebarAutoCollapseState();
+        if (chkAutoCollapse && chkAutoCollapse.checked !== sidebarAutoCollapseState.enabled) {
+            chkAutoCollapse.checked = sidebarAutoCollapseState.enabled;
+        }
+    }
+
+    function cancelSidebarAutoCollapseTimer() {
+        if (sidebarAutoCollapseTimer) {
+            clearTimeout(sidebarAutoCollapseTimer);
+            sidebarAutoCollapseTimer = null;
+        }
+    }
+
+    function handleSidebarAutoCollapseMouseEnter() {
+        if (!sidebarAutoCollapseState.enabled) {
+            return;
+        }
+        cancelSidebarAutoCollapseTimer();
+        setSidebarAutoCollapseState(
+            sidebarAutoCollapseLogic.handleSidebarAutoCollapseMouseEnter
+                ? sidebarAutoCollapseLogic.handleSidebarAutoCollapseMouseEnter(sidebarAutoCollapseState)
+                : { enabled: true, collapsed: false }
+        );
+    }
+
+    function handleSidebarAutoCollapseMouseLeave() {
+        if (!sidebarAutoCollapseState.enabled) {
+            return;
+        }
+        cancelSidebarAutoCollapseTimer();
+        const delayMs = sidebarAutoCollapseLogic.getSidebarAutoCollapseDelayMs
+            ? sidebarAutoCollapseLogic.getSidebarAutoCollapseDelayMs()
+            : sidebarAutoCollapseLogic.SIDEBAR_AUTO_COLLAPSE_DELAY_MS || 240;
+        sidebarAutoCollapseTimer = setTimeout(() => {
+            sidebarAutoCollapseTimer = null;
+            setSidebarAutoCollapseState(
+                sidebarAutoCollapseLogic.handleSidebarAutoCollapseMouseLeave
+                    ? sidebarAutoCollapseLogic.handleSidebarAutoCollapseMouseLeave(sidebarAutoCollapseState)
+                    : { enabled: true, collapsed: true }
+            );
+        }, delayMs);
+    }
+
+    function bindSidebarAutoCollapse() {
+        if (chkAutoCollapse) {
+            chkAutoCollapse.checked = sidebarAutoCollapseState.enabled;
+            chkAutoCollapse.addEventListener('change', () => {
+                cancelSidebarAutoCollapseTimer();
+                setSidebarAutoCollapseState(
+                    sidebarAutoCollapseLogic.setSidebarAutoCollapseEnabled
+                        ? sidebarAutoCollapseLogic.setSidebarAutoCollapseEnabled(sidebarAutoCollapseState, chkAutoCollapse.checked)
+                        : { enabled: !!chkAutoCollapse.checked, collapsed: false }
+                );
+            });
+        }
+
+        if (sidebar) {
+            sidebar.addEventListener('mouseenter', handleSidebarAutoCollapseMouseEnter);
+            sidebar.addEventListener('mouseleave', handleSidebarAutoCollapseMouseLeave);
+        }
+    }
+
     function startEditorMode() {
+        chkEnableCrop.checked = false;
+        syncCropPresetUI();
         if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
             hideEditorChrome();
             dashboard.style.display = 'flex';
@@ -1413,6 +2056,8 @@
         applyI18n();
         applyShortcutHints();
         bindShortcutHintInteractions();
+        bindSidebarAutoCollapse();
+        setFileSizeLabel(currentFileSizeBytes);
         startEditorMode();
     }
 
@@ -1458,7 +2103,8 @@
     function loadFile(file) {
         const reader = new FileReader();
         reader.onload = (event) => {
-            lblFilename.textContent = file.name || t('pastedImage');
+            currentFileSizeBytes = parseFileSizeBytes(file.size);
+            setFileSizeLabel(currentFileSizeBytes);
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
             showEditorChrome();
@@ -1470,24 +2116,42 @@
         reader.readAsDataURL(file);
     }
 
-    function getViewportFitRatio() {
+    function getViewportAvailSize() {
         if (!canvasScrollArea) {
-            return 1;
+            return { availW: 1, availH: 1 };
         }
-        const availW = Math.max(1, canvasScrollArea.clientWidth - (CANVAS_PADDING * 2));
-        const availH = Math.max(1, canvasScrollArea.clientHeight - (CANVAS_PADDING * 2));
-        return Math.min(availW / originalWidth, availH / originalHeight, 1);
+        return {
+            availW: Math.max(1, canvasScrollArea.clientWidth - (CANVAS_PADDING * 2)),
+            availH: Math.max(1, canvasScrollArea.clientHeight - (CANVAS_PADDING * 2))
+        };
     }
 
-    function applyZoomAfterResize(preferredRatio) {
+    function getViewportFillRatio() {
+        const { availW, availH } = getViewportAvailSize();
+        if (resizePanelLogic.getViewportFillRatio) {
+            return resizePanelLogic.getViewportFillRatio(availW, availH, originalWidth, originalHeight);
+        }
+        return Math.min(availW / originalWidth, availH / originalHeight);
+    }
+
+    function getViewportFitRatio() {
+        return Math.min(getViewportFillRatio(), 1);
+    }
+
+    function applyZoomAfterResize(preferredRatio, resizePanelScalePercent) {
         if (!cropper) {
             return;
         }
-        const maxFit = getViewportFitRatio();
-        let ratio = preferredRatio != null ? preferredRatio : maxFit;
-        ratio = Math.min(ratio, maxFit);
+        const fillRatio = getViewportFillRatio();
+        const ratio = resizePanelLogic.resolveZoomRatioAfterResize
+            ? resizePanelLogic.resolveZoomRatioAfterResize(
+                fillRatio,
+                resizePanelScalePercent,
+                preferredRatio
+            )
+            : Math.min(preferredRatio != null ? preferredRatio : fillRatio, getViewportFitRatio());
         applyZoomTo(ratio);
-        initialFitRatio = maxFit;
+        initialFitRatio = getViewportFitRatio();
         updateZoomIndicator();
     }
 
@@ -1495,10 +2159,16 @@
         const preserveInitialSrc = options && options.preserveInitialSrc;
         const afterResize = options && options.afterResize;
         const preserveZoomRatio = options && options.preserveZoomRatio;
+        const resizePanelScalePercent = options && options.resizePanelScalePercent;
+        const preserveSharpenAdjust = options && options.preserveSharpenAdjust;
+        if (!preserveSharpenAdjust) {
+            resetSharpenAdjust();
+        }
         invalidateColorPickerCanvas();
         invalidateMagicWandCanvas();
         clearMagicWandMask();
         endMagicWandMode(false);
+        suppressCropCheckboxAutoEnable = true;
         if (!initialImageSrc || preserveInitialSrc) {
             initialImageSrc = src;
         }
@@ -1544,7 +2214,7 @@
                         canvasScrollArea.scrollLeft = 0;
                         canvasScrollArea.scrollTop = 0;
                         if (afterResize) {
-                            applyZoomAfterResize(preserveZoomRatio);
+                            applyZoomAfterResize(preserveZoomRatio, resizePanelScalePercent);
                         } else {
                             const fitRatio = getViewportFitRatio();
                             if (fitRatio < 1) {
@@ -1566,6 +2236,7 @@
                     } else {
                         updateResizeInputsFromCrop();
                     }
+                    suppressCropCheckboxAutoEnable = false;
                     focusCropKeyboardTarget();
                 },
                 cropmove() {
@@ -1576,7 +2247,7 @@
                     if (!isApplyingMagicWandSelection) {
                         clearMagicWandMask();
                     }
-                    if (cropper && cropper.cropped && !chkEnableCrop.checked) {
+                    if (!suppressCropCheckboxAutoEnable && cropper && cropper.cropped && !chkEnableCrop.checked) {
                         chkEnableCrop.checked = true;
                         syncCropPresetUI();
                         presetButtons.forEach(b => b.classList.remove('active'));
@@ -1612,9 +2283,7 @@
         if (rngResizeScale) {
             rngResizeScale.value = panel.scalePercent;
         }
-        if (resizeScaleVal) {
-            resizeScaleVal.textContent = String(panel.scalePercent);
-        }
+        setPercentSpan('resizeScaleVal', panel.scalePercent);
     }
 
     function syncResizeInputsToOriginal() {
@@ -1633,7 +2302,66 @@
         txtHeight.value = dims.height;
     }
 
-    /** Downscale in ~50% steps to reduce blur/aliasing from one-shot canvas resize. */
+    function resetSharpenAdjust() {
+        sharpenBaseSrc = null;
+        if (sharpenSection) {
+            sharpenSection.style.display = 'none';
+        }
+        if (rngSharpen) {
+            rngSharpen.disabled = true;
+            rngSharpen.value = '0';
+        }
+        setPercentSpan('sharpenVal', 0);
+    }
+
+    function enableSharpenAdjust(baseSrc) {
+        sharpenBaseSrc = baseSrc;
+        if (sharpenSection) {
+            sharpenSection.style.display = 'block';
+        }
+        if (rngSharpen) {
+            rngSharpen.disabled = false;
+            rngSharpen.value = '0';
+        }
+        setPercentSpan('sharpenVal', 0);
+    }
+
+    function replaceEditorImageSrc(url) {
+        if (cropper && typeof cropper.replace === 'function') {
+            cropper.replace(url, true);
+            return;
+        }
+        imageEl.src = url;
+    }
+
+    function applySharpenPreview(sliderPercent) {
+        if (!sharpenBaseSrc) {
+            return;
+        }
+        const percent = Math.max(0, Math.min(100, Math.round(Number(sliderPercent) || 0)));
+        setPercentSpan('sharpenVal', percent);
+        if (percent <= 0) {
+            replaceEditorImageSrc(sharpenBaseSrc);
+            return;
+        }
+        const img = new Image();
+        img.onload = () => {
+            if (!sharpenBaseSrc) {
+                return;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const amount = sharpenLogic.amountFromSlider(percent);
+            sharpenLogic.applyUnsharpMask(canvas, amount);
+            replaceEditorImageSrc(canvas.toDataURL());
+        };
+        img.src = sharpenBaseSrc;
+    }
+
+    /** Downscale in ~50% steps to reduce blur from one-shot canvas resize. */
     function resizeCanvasStepped(source, targetW, targetH) {
         const srcW = source.width;
         const srcH = source.height;
@@ -1652,21 +2380,14 @@
             return canvas;
         }
 
-        if (targetW >= srcW && targetH >= srcH) {
-            return drawToSize(source, targetW, targetH);
-        }
-
-        let w = srcW;
-        let h = srcH;
+        const steps = resizePanelLogic.computeHalveDownscaleSteps(
+            srcW, srcH, targetW, targetH
+        );
         let current = source;
-
-        while (w > targetW * 2 || h > targetH * 2) {
-            w = Math.max(targetW, Math.floor(w / 2));
-            h = Math.max(targetH, Math.floor(h / 2));
-            current = drawToSize(current, w, h);
+        for (const step of steps) {
+            current = drawToSize(current, step.w, step.h);
         }
-
-        return drawToSize(current, targetW, targetH);
+        return current;
     }
 
     function getCroppedCanvasResized(targetW, targetH) {
@@ -1686,9 +2407,7 @@
             return;
         }
         rngResizeScale.value = percent;
-        if (resizeScaleVal) {
-            resizeScaleVal.textContent = String(percent);
-        }
+        setPercentSpan('resizeScaleVal', percent);
     }
 
     function updateResizeInputsFromCrop() {
@@ -1700,10 +2419,9 @@
 
     function updateZoomIndicator() {
         if (!cropper) return;
-        const data = cropper.getImageData();
-        if (data && data.naturalWidth) {
-            const percent = Math.round((data.width / data.naturalWidth) * 100);
-            lblZoomPercent.textContent = `${percent}%`;
+        const ratio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData());
+        if (ratio != null) {
+            lblZoomPercent.textContent = `${zoomLogic.zoomRatioToPercent(ratio)}%`;
         }
     }
 
@@ -1721,11 +2439,10 @@
             return;
         }
 
-        const currentRatio = data.width / data.naturalWidth;
-        const at100Percent = Math.abs(currentRatio - 1) < 0.005;
+        const currentRatio = zoomLogic.getImageZoomRatioFromData(data);
         const fitRatio = getViewportFitRatio();
 
-        applyZoomTo(at100Percent ? fitRatio : 1);
+        applyZoomTo(zoomLogic.resolveToggleZoomTargetRatio(currentRatio, fitRatio));
         updateZoomIndicator();
     }
 
@@ -2030,9 +2747,12 @@
             eyedropperActive: isEyedropperActive,
             magicWandMode: isMagicWandMode,
             colorPickerMode: isColorPickerMode,
-            spacePressed: isSpacePressed,
+            spacePressed: isPanShortcutPressed(),
             zLoupeActive: isZLoupeActive,
-            targetInCanvas: !!(canvasScrollArea && canvasScrollArea.contains(e.target)),
+            targetInCanvas: !!(
+                (canvasScrollArea && canvasScrollArea.contains(e.target))
+                || e.target.closest('.cropper-container')
+            ),
             targetInToolbar: !!e.target.closest('.floating-toolbar'),
             targetInModal: !!(e.target.closest('.color-modal') || e.target.closest('.copy-modal'))
         };
@@ -2045,10 +2765,16 @@
         const point = getImagePointFromEvent(e);
         const cropData = cropper && cropper.cropped ? cropper.getData(true) : null;
         const state = getWorkspaceDblClickState(e);
+        const marqueeTargetHit = !!e.target.closest('.cropper-crop-box, .cropper-face, .cropper-view-box');
 
-        if (cropMarqueeLogic.shouldInvokeMarqueeDblClickToggle(state, point, cropData)) {
+        if (cropMarqueeLogic.shouldInvokeMarqueeDblClickToggle(state, point, cropData, { marqueeTargetHit })) {
             e.preventDefault();
             e.stopPropagation();
+            const zoomRatio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData()) ?? 1;
+            if (zoomLogic.isImageZoomBelowFull(zoomRatio)) {
+                applyZoomTo(1);
+                return;
+            }
             toggleCropMarqueeFullContent();
             return;
         }
@@ -2064,70 +2790,73 @@
 
     // Aspect Ratio Lock and Dimension synchronization
     txtWidth.addEventListener('input', () => {
+        normalizeResizeDimensionInput(txtWidth);
         if (chkLockRatio.checked && aspectRatio) {
             txtHeight.value = Math.round(txtWidth.value / aspectRatio);
+            normalizeResizeDimensionInput(txtHeight);
         }
         updateResizeScaleFromInputs();
     });
 
     txtHeight.addEventListener('input', () => {
+        normalizeResizeDimensionInput(txtHeight);
         if (chkLockRatio.checked && aspectRatio) {
             txtWidth.value = Math.round(txtHeight.value * aspectRatio);
+            normalizeResizeDimensionInput(txtWidth);
         }
         updateResizeScaleFromInputs();
     });
 
     if (rngResizeScale) {
         rngResizeScale.addEventListener('input', () => {
-            const percent = parseInt(rngResizeScale.value, 10);
-            if (resizeScaleVal) {
-                resizeScaleVal.textContent = rngResizeScale.value;
-            }
+            const percent = resizePanelLogic.clampResizeScalePercent
+                ? resizePanelLogic.clampResizeScalePercent(rngResizeScale.value)
+                : Math.max(10, Math.min(200, Math.round(Number(rngResizeScale.value) || 100)));
+            rngResizeScale.value = String(percent);
+            setPercentSpan('resizeScaleVal', String(percent));
             applyResizeScale(percent);
         });
+    }
+
+    if (zoomLoupeDragHandle) {
+        zoomLoupeDragHandle.addEventListener('pointerdown', startZoomLoupePanelDrag);
+        window.addEventListener('pointermove', moveZoomLoupePanelDrag);
+        window.addEventListener('pointerup', stopZoomLoupePanelDrag);
+        window.addEventListener('pointercancel', stopZoomLoupePanelDrag);
+    }
+
+    if (toolbarDragHandle) {
+        toolbarDragHandle.addEventListener('pointerdown', startToolbarDrag);
+        window.addEventListener('pointermove', moveToolbarDrag);
+        window.addEventListener('pointerup', stopToolbarDrag);
+        window.addEventListener('pointercancel', stopToolbarDrag);
     }
 
     // Toolbar zoom / rotate
     document.getElementById('btnZoomIn').addEventListener('click', () => {
         if (cropper) {
-            applyZoom(0.1);
+            applyZoomAction('zoomIn');
         }
     });
     document.getElementById('btnZoomOut').addEventListener('click', () => {
         if (cropper) {
-            applyZoom(-0.1);
+            applyZoomAction('zoomOut');
         }
     });
     document.getElementById('btnRotateLeft').addEventListener('click', () => {
-        if (cropper) {
-            markTransformEdit('edit.rotate');
-            cropper.rotate(-90);
-            scheduleSyncLayout();
-        }
+        applyRotationAction('rotateLeft');
     });
     document.getElementById('btnRotateRight').addEventListener('click', () => {
-        if (cropper) {
-            markTransformEdit('edit.rotate');
-            cropper.rotate(90);
-            scheduleSyncLayout();
-        }
+        applyRotationAction('rotateRight');
     });
     document.getElementById('btnFlipH').addEventListener('click', () => {
-        if (cropper) {
-            markTransformEdit('edit.flipH');
-            scaleX = -scaleX;
-            cropper.scaleX(scaleX);
-        }
+        applyFlipAction('flipH');
     });
     document.getElementById('btnFlipV').addEventListener('click', () => {
-        if (cropper) {
-            markTransformEdit('edit.flipV');
-            scaleY = -scaleY;
-            cropper.scaleY(scaleY);
-        }
+        applyFlipAction('flipV');
     });
     document.getElementById('btnReset').addEventListener('click', () => {
-        toggleZoomView();
+        applyZoomTo(getViewportFitRatio());
     });
 
     // Format changes display quality slider
@@ -2141,8 +2870,23 @@
     });
 
     rngQuality.addEventListener('input', () => {
-        qualityVal.textContent = rngQuality.value;
+        setPercentSpan('qualityVal', rngQuality.value);
     });
+
+    if (rngSharpen) {
+        rngSharpen.addEventListener('input', () => {
+            clearTimeout(sharpenPreviewTimer);
+            sharpenPreviewTimer = setTimeout(() => {
+                applySharpenPreview(parseInt(rngSharpen.value, 10));
+            }, 40);
+        });
+        rngSharpen.addEventListener('change', () => {
+            const percent = parseInt(rngSharpen.value, 10);
+            if (sharpenBaseSrc && percent > 0) {
+                notifyDocumentChanged('edit.sharpen');
+            }
+        });
+    }
 
     // Apply manual resize dimension changes (destructively crops and resizes on screen)
     btnApplyResize.addEventListener('click', () => {
@@ -2187,7 +2931,17 @@
                     preserveZoomRatio = imgData.width / imgData.naturalWidth;
                 }
             }
-            initEditor(newSrc, { afterResize: true, preserveZoomRatio });
+            const resizePanelScalePercent = resizePanelLogic.percentFromResizeWidth(
+                targetWidth,
+                resizeBaseWidth
+            );
+            enableSharpenAdjust(newSrc);
+            initEditor(newSrc, {
+                afterResize: true,
+                preserveZoomRatio,
+                resizePanelScalePercent,
+                preserveSharpenAdjust: true
+            });
             notifyDocumentChanged('edit.resize');
             vscode.postMessage({ command: 'show-toast', text: t('toast.resizeApplied') });
         }
@@ -2283,15 +3037,15 @@
         if (!copyQualitySection) {
             return;
         }
-        const showQuality = selectedCopyFormat === 'image/jpeg' || selectedCopyFormat === 'image/webp';
+        const showQuality = clipboardLogic.shouldShowQuality(selectedCopyFormat);
         copyQualitySection.style.display = showQuality ? 'block' : 'none';
     }
 
     function setSelectedCopyFormat(format) {
-        selectedCopyFormat = format;
+        selectedCopyFormat = clipboardLogic.resolveCopyFormat(format);
         if (copyFormatOptions) {
             copyFormatOptions.querySelectorAll('.copy-format-btn').forEach((btn) => {
-                btn.classList.toggle('active', btn.dataset.format === format);
+                btn.classList.toggle('active', btn.dataset.format === selectedCopyFormat);
             });
         }
         syncCopyQualityVisibility();
@@ -2308,23 +3062,19 @@
             return;
         }
 
-        const savedFormat = sessionStorage.getItem(COPY_FORMAT_STORAGE_KEY) || 'image/png';
+        const savedFormat = clipboardLogic.resolveCopyFormat(sessionStorage.getItem(COPY_FORMAT_STORAGE_KEY));
         setSelectedCopyFormat(savedFormat);
 
         const savedQuality = sessionStorage.getItem(COPY_QUALITY_STORAGE_KEY);
-        const quality = savedQuality ? parseInt(savedQuality, 10) : parseInt(rngQuality.value, 10);
+        const quality = clipboardLogic.resolveCopyQuality(savedQuality, parseInt(rngQuality.value, 10));
         if (rngCopyQuality) {
             rngCopyQuality.value = String(quality);
         }
-        if (copyQualityVal) {
-            copyQualityVal.textContent = String(quality);
-        }
+        setPercentSpan('copyQualityVal', quality);
 
         if (chkCopySelectionOnly) {
             const savedScope = sessionStorage.getItem(COPY_SCOPE_STORAGE_KEY);
-            chkCopySelectionOnly.checked = hasActiveCopySelection()
-                ? savedScope !== 'full'
-                : false;
+            chkCopySelectionOnly.checked = clipboardLogic.resolveSelectionOnly(hasActiveCopySelection(), savedScope);
         }
         updateCopyScopeUI();
 
@@ -2399,9 +3149,9 @@
         });
     }
 
-    if (rngCopyQuality && copyQualityVal) {
+    if (rngCopyQuality) {
         rngCopyQuality.addEventListener('input', () => {
-            copyQualityVal.textContent = rngCopyQuality.value;
+            setPercentSpan('copyQualityVal', rngCopyQuality.value);
         });
     }
 
@@ -2416,94 +3166,7 @@
         copyModalBackdrop.addEventListener('click', hideCopyModal);
     }
 
-    // ── Color Picker (Option/Alt key) ──────────────────────────────────────
-
-    function toHexByte(n) {
-        return n.toString(16).padStart(2, '0').toUpperCase();
-    }
-
-    function rgbToHsl(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        let h = 0;
-        let s = 0;
-        const l = (max + min) / 2;
-
-        if (max !== min) {
-            const d = max - min;
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            switch (max) {
-                case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-                case g: h = ((b - r) / d + 2) / 6; break;
-                case b: h = ((r - g) / d + 4) / 6; break;
-            }
-        }
-
-        return {
-            h: Math.round(h * 360),
-            s: Math.round(s * 100),
-            l: Math.round(l * 100)
-        };
-    }
-
-    function rgbToHsv(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const d = max - min;
-        let h = 0;
-
-        if (max !== min) {
-            switch (max) {
-                case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-                case g: h = ((b - r) / d + 2) / 6; break;
-                case b: h = ((r - g) / d + 4) / 6; break;
-            }
-        }
-
-        return {
-            h: Math.round(h * 360),
-            s: max === 0 ? 0 : Math.round((d / max) * 100),
-            v: Math.round(max * 100)
-        };
-    }
-
-    function rgbToCmyk(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        const k = 1 - Math.max(r, g, b);
-        if (k >= 0.999) {
-            return { c: 0, m: 0, y: 0, k: 100 };
-        }
-        const c = (1 - r - k) / (1 - k);
-        const m = (1 - g - k) / (1 - k);
-        const y = (1 - b - k) / (1 - k);
-        return {
-            c: Math.round(c * 100),
-            m: Math.round(m * 100),
-            y: Math.round(y * 100),
-            k: Math.round(k * 100)
-        };
-    }
-
-    function buildColorFormats(r, g, b, a) {
-        const alpha = a / 255;
-        const hex = a < 255
-            ? `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}${toHexByte(a)}`
-            : `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}`;
-        const hsl = rgbToHsl(r, g, b);
-        const hsv = rgbToHsv(r, g, b);
-        const cmyk = rgbToCmyk(r, g, b);
-
-        return [
-            { label: 'HEX', value: hex },
-            { label: 'RGB', value: `rgb(${r}, ${g}, ${b})` },
-            { label: 'RGBA', value: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})` },
-            { label: 'HSL', value: `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` },
-            { label: 'HSV', value: `hsv(${hsv.h}, ${hsv.s}%, ${hsv.v}%)` },
-            { label: 'CMYK', value: `cmyk(${cmyk.c}%, ${cmyk.m}%, ${cmyk.y}%, ${cmyk.k}%)` }
-        ];
-    }
+    // ── Color Picker (Photoshop I key) ─────────────────────────────────────
 
     function ensureColorPickerCanvas() {
         if (!cropper || !imageEl) {
@@ -2531,7 +3194,8 @@
         const xInImage = xInContainer - imageData.left;
         const yInImage = yInContainer - imageData.top;
 
-        const onImage = xInImage >= 0 && xInImage <= imageData.width && yInImage >= 0 && yInImage <= imageData.height;
+        const onImage = xInImage >= -1 && xInImage <= imageData.width + 1
+            && yInImage >= -1 && yInImage <= imageData.height + 1;
         if (!onImage) {
             return null;
         }
@@ -2630,7 +3294,7 @@
             return;
         }
 
-        const formats = buildColorFormats(color.r, color.g, color.b, color.a);
+        const formats = colorLogic.buildColorFormats(color.r, color.g, color.b, color.a);
         const preview = formats[0].value;
         const cssColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a / 255})`;
 
@@ -2673,7 +3337,7 @@
         }
 
         const cssColor = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
-        const formats = buildColorFormats(r, g, b, a);
+        const formats = colorLogic.buildColorFormats(r, g, b, a);
 
         if (colorModalSwatch) {
             colorModalSwatch.style.backgroundColor = cssColor;
@@ -2730,26 +3394,27 @@
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Alt' || e.repeat || isTypingTarget(document.activeElement)) {
+        if (!shortcutLogic.isEyedropperHoldCode(e.code) || e.repeat || e.metaKey || e.ctrlKey || e.altKey
+            || isTypingTarget(document.activeElement)) {
             return;
         }
         if (colorModal && colorModal.style.display === 'flex') {
             return;
         }
-        isOptionPressed = true;
+        isEyedropperShortcutPressed = true;
         startColorPickerMode();
     });
 
     document.addEventListener('keyup', (e) => {
-        if (e.key !== 'Alt') {
+        if (!shortcutLogic.isEyedropperHoldCode(e.code)) {
             return;
         }
-        isOptionPressed = false;
+        isEyedropperShortcutPressed = false;
         endColorPickerMode();
     });
 
     window.addEventListener('blur', () => {
-        isOptionPressed = false;
+        isEyedropperShortcutPressed = false;
         endColorPickerMode();
     });
 
@@ -2785,7 +3450,7 @@
         if (face) {
             face.style.backgroundColor = 'transparent';
         }
-        if (isOptionPressed) {
+        if (isEyedropperShortcutPressed) {
             startColorPickerMode();
         }
     }
@@ -2839,66 +3504,7 @@
         const w = originalWidth;
         const h = originalHeight;
         const pixels = magicWandCtx.getImageData(0, 0, w, h).data;
-        const startIdx = startY * w + startX;
-        const seed = startIdx * 4;
-        const r0 = pixels[seed];
-        const g0 = pixels[seed + 1];
-        const b0 = pixels[seed + 2];
-        const a0 = pixels[seed + 3];
-
-        function matches(idx) {
-            const i = idx * 4;
-            return Math.abs(pixels[i] - r0) <= tolerance
-                && Math.abs(pixels[i + 1] - g0) <= tolerance
-                && Math.abs(pixels[i + 2] - b0) <= tolerance
-                && Math.abs(pixels[i + 3] - a0) <= tolerance;
-        }
-
-        const mask = new Uint8Array(w * h);
-        const visited = new Uint8Array(w * h);
-        const stack = [startX, startY];
-        let count = 0;
-        let minX = w;
-        let minY = h;
-        let maxX = -1;
-        let maxY = -1;
-
-        while (stack.length) {
-            const y = stack.pop();
-            const x = stack.pop();
-            const idx = y * w + x;
-            if (x < 0 || x >= w || y < 0 || y >= h || visited[idx]) {
-                continue;
-            }
-            if (!matches(idx)) {
-                continue;
-            }
-
-            visited[idx] = 1;
-            mask[idx] = 1;
-            count++;
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-
-            stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
-        }
-
-        if (count === 0) {
-            return null;
-        }
-
-        return {
-            mask,
-            count,
-            bounds: {
-                x: minX,
-                y: minY,
-                width: maxX - minX + 1,
-                height: maxY - minY + 1
-            }
-        };
+        return magicWandLogic.floodFillPixels(pixels, w, h, startX, startY, tolerance);
     }
 
     function ensureMagicWandOverlay() {
@@ -3126,9 +3732,12 @@
         vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
     }
 
-    if (rngMagicWandTolerance && magicWandToleranceVal) {
+    if (rngMagicWandTolerance) {
         rngMagicWandTolerance.addEventListener('input', () => {
-            magicWandToleranceVal.textContent = rngMagicWandTolerance.value;
+            const el = document.getElementById('magicWandToleranceVal');
+            if (el) {
+                el.textContent = rngMagicWandTolerance.value;
+            }
         });
     }
 
@@ -3350,21 +3959,13 @@
     document.getElementById('ctxFlipH').addEventListener('click', (e) => {
         e.stopPropagation();
         contextMenu.style.display = 'none';
-        if (cropper) {
-            markTransformEdit('edit.flipH');
-            scaleX = -scaleX;
-            cropper.scaleX(scaleX);
-        }
+        applyFlipAction('flipH');
     });
 
     document.getElementById('ctxFlipV').addEventListener('click', (e) => {
         e.stopPropagation();
         contextMenu.style.display = 'none';
-        if (cropper) {
-            markTransformEdit('edit.flipV');
-            scaleY = -scaleY;
-            cropper.scaleY(scaleY);
-        }
+        applyFlipAction('flipV');
     });
 
     document.getElementById('ctxSave').addEventListener('click', (e) => {
@@ -3389,6 +3990,85 @@
         document.getElementById('btnReset').click();
     });
 
+    function selectFullImageCropSelection() {
+        if (!cropper) {
+            return;
+        }
+        if (!chkEnableCrop.checked) {
+            chkEnableCrop.checked = true;
+            syncCropPresetUI();
+        }
+        cropper.crop();
+        cropper.setData({
+            x: 0,
+            y: 0,
+            width: originalWidth,
+            height: originalHeight
+        });
+        presetButtons.forEach(b => b.classList.remove('active'));
+        const freeBtn = document.querySelector('#cropPresets button[data-ratio="NaN"]');
+        if (freeBtn) freeBtn.classList.add('active');
+    }
+
+    function runShortcutAction(shortcutAction, options = {}) {
+        if (!shortcutAction) {
+            return false;
+        }
+
+        if (options.inputFocused && shortcutAction !== 'save' && shortcutAction !== 'undo') {
+            return false;
+        }
+
+        if (shortcutAction === 'save') {
+            triggerSave('save');
+            return true;
+        }
+        if (shortcutAction === 'undo') {
+            if (isDocumentEditor) {
+                vscode.postMessage({ command: 'undo-request' });
+            } else {
+                performUndo();
+            }
+            return true;
+        }
+        if (shortcutAction === 'copy') {
+            copyImageToClipboard();
+            return true;
+        }
+        if (shortcutAction === 'selectAll') {
+            selectFullImageCropSelection();
+            return true;
+        }
+        if (shortcutAction === 'crop') {
+            toggleCropModeWithKey();
+            return true;
+        }
+        if (shortcutAction === 'magicWand') {
+            toggleMagicWandMode();
+            return true;
+        }
+        if (shortcutAction === 'zoomIn' || shortcutAction === 'zoomOut') {
+            if (cropper) {
+                applyZoomAction(shortcutAction);
+            }
+            return true;
+        }
+        if (shortcutAction === 'rotateLeft' || shortcutAction === 'rotateRight') {
+            applyRotationAction(shortcutAction);
+            return true;
+        }
+        if (shortcutAction === 'fitViewport') {
+            applyZoomTo(getViewportFitRatio());
+            return true;
+        }
+        if (shortcutAction === 'actualPixels') {
+            applyZoomTo(1);
+            return true;
+        }
+
+        return false;
+    }
+
     // Global keyboard listener
     document.addEventListener('keydown', (e) => {
         // Guard input elements so typing is not hijacked
@@ -3399,46 +4079,18 @@
             activeEl.tagName === 'TEXTAREA' || 
             activeEl.isContentEditable
         );
+        const shortcutAction = shortcutLogic.getShortcutAction(e);
 
         if (isInput) {
             // Still allow Save (Cmd+S) and Undo (Cmd+Z) inside input focus
-            if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+            if (runShortcutAction(shortcutAction, { inputFocused: true })) {
                 e.preventDefault();
-                triggerSave('save');
-            }
-            if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-                e.preventDefault();
-                if (isDocumentEditor) {
-                    vscode.postMessage({ command: 'undo-request' });
-                } else {
-                    performUndo();
-                }
             }
             return;
         }
 
-        // Save: Cmd+S / Ctrl+S
-        if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        if (runShortcutAction(shortcutAction)) {
             e.preventDefault();
-            triggerSave('save');
-            return;
-        }
-
-        // Undo: Cmd+Z / Ctrl+Z
-        if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-            e.preventDefault();
-            if (isDocumentEditor) {
-                vscode.postMessage({ command: 'undo-request' });
-            } else {
-                performUndo();
-            }
-            return;
-        }
-
-        // Copy: Cmd+C / Ctrl+C
-        if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
-            e.preventDefault();
-            copyImageToClipboard();
             return;
         }
 
@@ -3450,38 +4102,6 @@
             } else if (chkEnableCrop.checked && cropper && cropper.cropped) {
                 e.preventDefault();
                 eraseSelection();
-            }
-            return;
-        }
-
-        // Crop toggle: C
-        if ((e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-            e.preventDefault();
-            toggleCropModeWithKey();
-            return;
-        }
-
-        // Magic Wand toggle: W
-        if ((e.key === 'w' || e.key === 'W') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-            e.preventDefault();
-            toggleMagicWandMode();
-            return;
-        }
-
-        // Zoom In: Cmd/Ctrl + = or Cmd/Ctrl + + or simple key +
-        if (((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) || e.key === '+') {
-            e.preventDefault();
-            if (cropper) {
-                applyZoom(0.1);
-            }
-            return;
-        }
-
-        // Zoom Out: Cmd/Ctrl + - or Cmd/Ctrl + _ or simple key -
-        if (((e.metaKey || e.ctrlKey) && (e.key === '-' || e.key === '_')) || e.key === '-') {
-            e.preventDefault();
-            if (cropper) {
-                applyZoom(-0.1);
             }
             return;
         }
@@ -3502,63 +4122,12 @@
             return;
         }
 
-        // Rotate Left: Cmd/Ctrl + [
-        if ((e.metaKey || e.ctrlKey) && e.key === '[') {
-            e.preventDefault();
-            if (cropper) {
-                markTransformEdit('edit.rotate');
-                cropper.rotate(-90);
-                scheduleSyncLayout();
-            }
-            return;
-        }
-
-        // Rotate Right: Cmd/Ctrl + ]
-        if ((e.metaKey || e.ctrlKey) && e.key === ']') {
-            e.preventDefault();
-            if (cropper) {
-                markTransformEdit('edit.rotate');
-                cropper.rotate(90);
-                scheduleSyncLayout();
-            }
-            return;
-        }
-
-        // Toggle 100% ↔ initial fit: Cmd/Ctrl + 0
-        if ((e.metaKey || e.ctrlKey) && e.key === '0') {
-            e.preventDefault();
-            toggleZoomView();
-            return;
-        }
-
         // Move crop marquee: Arrow keys (Shift = 10px)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             if (chkEnableCrop.checked && cropper) {
                 if (moveCropMarqueeWithArrow(e.key, e.shiftKey)) {
                     e.preventDefault();
                 }
-            }
-            return;
-        }
-
-        // Select All (Full image crop selection): Cmd/Ctrl + A
-        if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
-            e.preventDefault();
-            if (cropper) {
-                if (!chkEnableCrop.checked) {
-                    chkEnableCrop.checked = true;
-                    syncCropPresetUI();
-                }
-                cropper.crop();
-                cropper.setData({
-                    x: 0,
-                    y: 0,
-                    width: originalWidth,
-                    height: originalHeight
-                });
-                presetButtons.forEach(b => b.classList.remove('active'));
-                const freeBtn = document.querySelector('#cropPresets button[data-ratio="NaN"]');
-                if (freeBtn) freeBtn.classList.add('active');
             }
             return;
         }
@@ -3579,7 +4148,7 @@
                 return;
             }
             if (isColorPickerMode) {
-                isOptionPressed = false;
+                isEyedropperShortcutPressed = false;
                 endColorPickerMode();
                 return;
             }
@@ -3673,17 +4242,18 @@
     }
 
     function triggerSave(type) {
-        if (type === 'save' && isDocumentEditor) {
-            vscode.postMessage({ command: 'save-document' });
+        const start = saveExportLogic.resolveSaveStart(type, isDocumentEditor);
+        if (start.immediateMessage) {
+            vscode.postMessage(start.immediateMessage);
             return;
         }
-        if (window.editorApi && window.editorApi.getCanvasBlob) {
+        if (start.needsBlob && window.editorApi && window.editorApi.getCanvasBlob) {
             window.editorApi.getCanvasBlob((blob) => {
                 if (!blob) return;
                 const reader = new FileReader();
                 reader.onloadend = () => {
                     vscode.postMessage({
-                        command: type === 'save' ? 'save-image' : 'export-image',
+                        command: saveExportLogic.commandForBlobType(type),
                         arrayBuffer: reader.result,
                         mimeType: blob.type
                     });
