@@ -1338,6 +1338,7 @@
         canvasScrollArea.addEventListener('scroll', scheduleRulerRedraw);
 
         canvasScrollArea.addEventListener('mousedown', () => {
+            dismissShortcutLayers();
             focusCropKeyboardTarget();
         });
 
@@ -1363,6 +1364,10 @@
             canvasScrollArea.scrollTop += e.deltaY;
             scheduleRulerRedraw();
         }, { passive: false, capture: true });
+    }
+
+    if (imageContainer) {
+        imageContainer.addEventListener('mousedown', dismissShortcutLayers, true);
     }
 
     // Space + drag pan (hand tool)
@@ -2229,6 +2234,7 @@
                         if (!afterResize) {
                             captureInitialFitRatio();
                         }
+                        suppressCropCheckboxAutoEnable = false;
                     });
                     updateCropInteraction();
                     if (resizePanelLogic.shouldSyncResizePanelFromImage(chkEnableCrop.checked, cropper.cropped)) {
@@ -2236,7 +2242,6 @@
                     } else {
                         updateResizeInputsFromCrop();
                     }
-                    suppressCropCheckboxAutoEnable = false;
                     focusCropKeyboardTarget();
                 },
                 cropmove() {

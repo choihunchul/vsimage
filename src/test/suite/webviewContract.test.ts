@@ -112,6 +112,18 @@ suite('Webview contracts', () => {
         assert.ok(styles.includes('font-size: 0.92rem;'));
     });
 
+    test('dismisses shortcut hints when the canvas image is clicked', () => {
+        assert.ok(editor.includes('canvasScrollArea.addEventListener(\'mousedown\', () => {'));
+        assert.ok(editor.includes('dismissShortcutLayers();'));
+        assert.ok(editor.includes('imageContainer.addEventListener(\'mousedown\', dismissShortcutLayers, true);'));
+    });
+
+    test('keeps crop disabled until the initial image load settles', () => {
+        assert.ok(editor.includes('requestAnimationFrame(() => {'));
+        assert.ok(editor.includes('suppressCropCheckboxAutoEnable = false;'));
+        assert.ok(editor.includes('chkEnableCrop.checked = false;'));
+    });
+
     test('slows the sidebar collapse transition down a bit', () => {
         assert.ok(styles.includes('transition: width 480ms ease, min-width 480ms ease, flex-basis 480ms ease, padding 480ms ease;'));
         assert.ok(styles.includes('transition-duration: 240ms;'));
