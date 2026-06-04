@@ -485,6 +485,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             <div class="canvas-scroll-content" id="canvasScrollContent">
                                 <div class="image-container" id="imageContainer">
                                     <img id="image" ${safeImageSrc ? `src="${safeImageSrc}"` : ''}>
+                                    <canvas id="mosaicPreviewCanvas" class="mosaic-preview-canvas" style="display: none;"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -744,6 +745,27 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             </div>
                         </div>
                         <button type="button" class="btn-accent copy-modal-confirm" id="btnCopyConfirm" data-i18n="copyModal.confirm"></button>
+                    </div>
+                </div>
+
+                <div id="mosaicModal" class="color-modal mosaic-modal" style="display: none;">
+                    <div class="color-modal-backdrop" id="mosaicModalBackdrop"></div>
+                    <div class="color-modal-panel">
+                        <div class="color-modal-header">
+                            <span class="color-modal-title" data-i18n="mosaicModal.title"></span>
+                            <button type="button" class="color-modal-close" id="mosaicModalClose" data-i18n-title="mosaicModal.close">✕</button>
+                        </div>
+                        <div class="color-modal-hint mosaic-modal-hint" data-i18n="mosaicModal.hint"></div>
+                        <div class="control-group mosaic-size-section">
+                            <label data-i18n-label="mosaicModal.size" data-percent-id="mosaicSizeVal" data-percent-input="rngMosaicSize" data-percent-default="16">Size (<span id="mosaicSizeVal">16</span> px)</label>
+                            <div class="slider-row">
+                                <input type="range" id="rngMosaicSize" min="4" max="64" step="1" value="16">
+                            </div>
+                        </div>
+                        <div class="mosaic-modal-actions">
+                            <button type="button" class="btn-secondary" id="btnMosaicCancel" data-i18n="mosaicModal.cancel"></button>
+                            <button type="button" class="btn-accent mosaic-modal-confirm" id="btnMosaicConfirm" data-i18n="mosaicModal.confirm"></button>
+                        </div>
                     </div>
                 </div>
 

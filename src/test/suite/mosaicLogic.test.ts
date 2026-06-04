@@ -4,6 +4,10 @@ import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const mosaic = require(path.join(__dirname, '../../../../media/mosaicLogic.js')) as {
     applyMosaicToImageData: (imageData: ImageData, rect: { x: number; y: number; width: number; height: number }, blockSize: number) => ImageData;
+    scaleNaturalRectToImageData: (
+        rect: { x: number; y: number; width: number; height: number },
+        imageData: { width: number; height: number; naturalWidth: number; naturalHeight: number }
+    ) => { x: number; y: number; width: number; height: number } | null;
 };
 
 function createImageData(width: number, height: number, values: number[]): ImageData {
@@ -46,5 +50,14 @@ suite('Mosaic logic', () => {
         assert.deepStrictEqual(pixel(result.data, 3, 0, 0), [10, 0, 0, 255]);
         assert.deepStrictEqual(pixel(result.data, 3, 1, 0), [20, 0, 0, 255]);
         assert.deepStrictEqual(pixel(result.data, 3, 2, 0), [90, 0, 0, 255]);
+    });
+
+    test('scales natural crop bounds into rendered image bounds', () => {
+        const scaled = mosaic.scaleNaturalRectToImageData(
+            { x: 20, y: 10, width: 80, height: 40 },
+            { width: 200, height: 100, naturalWidth: 400, naturalHeight: 200 }
+        );
+
+        assert.deepStrictEqual(scaled, { x: 10, y: 5, width: 40, height: 20 });
     });
 });

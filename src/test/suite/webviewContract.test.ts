@@ -161,13 +161,20 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('mosaicLogicUri'));
         assert.ok(provider.includes('btnApplyMosaic'));
         assert.ok(provider.includes('sidebar.applyMosaic'));
+        assert.ok(provider.includes('mosaicModal'));
+        assert.ok(provider.includes('rngMosaicSize'));
+        assert.ok(provider.includes('btnMosaicConfirm'));
+        assert.ok(provider.includes('btnMosaicCancel'));
         assert.ok(editor.includes('const mosaicLogic = globalThis.VsimageMosaicLogic || {'));
         assert.ok(editor.includes('applyMosaicToImageData: (imageData, rect, blockSize) => {'));
         assert.ok(editor.includes('ctx.putImageData(imageData, 0, 0);'));
-        assert.ok(editor.includes('function applyMosaicToSelection()'));
-        assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', applyMosaicToSelection);"));
+        assert.ok(editor.includes('scaleNaturalRectToImageData'));
+        assert.ok(editor.includes('function showMosaicModal()'));
+        assert.ok(editor.includes('function renderMosaicPreview()'));
+        assert.ok(editor.includes('function hideMosaicModal()'));
+        assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', showMosaicModal);"));
         assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
-        assert.ok(editor.includes('applyMosaicToSelection();'));
+        assert.ok(editor.includes('showMosaicModal();'));
         assert.ok(provider.includes('shortcuts.mosaicSelection'));
     });
 

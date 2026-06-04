@@ -101,6 +101,14 @@ body, html {
     max-height: none;
 }
 
+.mosaic-preview-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 19;
+}
+
 /* Hide crop overlay unless crop mode is enabled */
 .canvas-workspace:not(.crop-active) .cropper-crop-box,
 .canvas-workspace:not(.crop-active) .cropper-view-box,
@@ -1118,6 +1126,33 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 .copy-modal-confirm {
     margin: 0 16px 16px;
     width: calc(100% - 32px);
+}
+
+.mosaic-modal-hint {
+    padding: 0 16px 12px;
+}
+
+.mosaic-size-section {
+    padding: 0 16px 12px;
+    margin: 0;
+}
+
+.mosaic-size-section label {
+    display: block;
+}
+
+.mosaic-modal-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 16px;
+}
+
+.mosaic-modal-actions button {
+    flex: 1;
+}
+
+.mosaic-modal-confirm {
+    min-width: 0;
 }
 
 /* Glassmorphic mouse-tracking tooltip */

@@ -302,6 +302,13 @@
     let eyedropperCtx = null;
     let lastSampledColor = null;
     let initialFitRatio = 1;
+    const MOSAIC_MIN_BLOCK_SIZE = 4;
+    const MOSAIC_MAX_BLOCK_SIZE = 64;
+    const MOSAIC_DEFAULT_BLOCK_SIZE = 16;
+    let mosaicPreviewState = null;
+    let mosaicPreviewCanvas = null;
+    let mosaicPreviewCtx = null;
+    let mosaicPreviewRaf = null;
     /** Natural-image crop rect; kept in sync on crop changes, not re-read after zoom. */
     let lastNaturalCropData = null;
     const eyedropperTooltip = document.getElementById('eyedropperTooltip');
@@ -328,6 +335,13 @@
     const copyQualitySection = document.getElementById('copyQualitySection');
     const rngCopyQuality = document.getElementById('rngCopyQuality');
     const btnCopyConfirm = document.getElementById('btnCopyConfirm');
+    const mosaicModal = document.getElementById('mosaicModal');
+    const mosaicModalBackdrop = document.getElementById('mosaicModalBackdrop');
+    const mosaicModalClose = document.getElementById('mosaicModalClose');
+    const btnMosaicCancel = document.getElementById('btnMosaicCancel');
+    const btnMosaicConfirm = document.getElementById('btnMosaicConfirm');
+    const rngMosaicSize = document.getElementById('rngMosaicSize');
+    const mosaicSizeVal = document.getElementById('mosaicSizeVal');
     const copyScopeSection = document.getElementById('copyScopeSection');
     const chkCopySelectionOnly = document.getElementById('chkCopySelectionOnly');
     const copyScopeInfo = document.getElementById('copyScopeInfo');
@@ -710,6 +724,10 @@
         if (marqueeGestureState) {
             return;
         }
+        if (mosaicModal && mosaicModal.style.display === 'flex') {
+            cropper.setDragMode('none');
+            return;
+        }
         if (isPanShortcutPressed() || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             cropper.setDragMode('none');
             return;
@@ -977,6 +995,20 @@
             mosaicLogic.applyMosaicToImageData(imageData, rect, blockSize);
             ctx.putImageData(imageData, 0, 0);
             return canvas;
+        },
+        scaleNaturalRectToImageData: (rect, imageData) => {
+            if (!rect || !imageData || !imageData.width || !imageData.height || !imageData.naturalWidth || !imageData.naturalHeight) {
+                return null;
+            }
+
+            const xScale = imageData.width / imageData.naturalWidth;
+            const yScale = imageData.height / imageData.naturalHeight;
+            return mosaicLogic.clampMosaicRect({
+                x: rect.x * xScale,
+                y: rect.y * yScale,
+                width: rect.width * xScale,
+                height: rect.height * yScale
+            }, imageData.width, imageData.height);
         }
     };
     const colorLogic = globalThis.VsimageColorLogic || {
@@ -1394,6 +1426,9 @@
 
         drawRulers();
         renderMagicWandOverlay();
+        if (mosaicModal && mosaicModal.style.display === 'flex') {
+            scheduleMosaicPreviewRender();
+        }
     }
 
     function applyZoom(delta) {
@@ -2454,6 +2489,7 @@
         const preserveZoomRatio = options && options.preserveZoomRatio;
         const resizePanelScalePercent = options && options.resizePanelScalePercent;
         const preserveSharpenAdjust = options && options.preserveSharpenAdjust;
+        hideMosaicModal();
         if (!preserveSharpenAdjust) {
             resetSharpenAdjust();
         }
@@ -2534,6 +2570,9 @@
                     updateResizeInputsFromCrop();
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
+                    if (mosaicModal && mosaicModal.style.display === 'flex') {
+                        scheduleMosaicPreviewRender();
+                    }
                 },
                 crop() {
                     if (!isApplyingMagicWandSelection) {
@@ -2542,11 +2581,17 @@
                     updateResizeInputsFromCrop();
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
+                    if (mosaicModal && mosaicModal.style.display === 'flex') {
+                        scheduleMosaicPreviewRender();
+                    }
                 },
                 zoom() {
                     updateZoomIndicator();
                     requestAnimationFrame(() => {
                         renderMagicWandOverlay();
+                        if (mosaicModal && mosaicModal.style.display === 'flex') {
+                            scheduleMosaicPreviewRender();
+                        }
                     });
                 }
             });
@@ -3264,38 +3309,8 @@
         vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
     });
 
-    function applyMosaicToSelection() {
-        if (!cropper) return;
-        if (!chkEnableCrop.checked || !cropper.cropped) {
-            vscode.postMessage({ command: 'show-toast', text: t('toast.cropSelectFirst') });
-            return;
-        }
-
-        clearMagicWandMask();
-        endMagicWandMode(false);
-        endColorPickerMode();
-        pushHistorySnapshot('edit.mosaic');
-
-        const cropData = cropper.getData(true);
-        const canvas = document.createElement('canvas');
-        canvas.width = originalWidth;
-        canvas.height = originalHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(imageEl, 0, 0);
-        const mosaicBlockSize = Math.max(
-            16,
-            Math.min(64, Math.round(Math.min(cropData.width, cropData.height) / 6))
-        );
-        mosaicLogic.applyMosaicToCanvas(canvas, cropData, mosaicBlockSize);
-
-        const newSrc = canvas.toDataURL();
-        initEditor(newSrc);
-        notifyDocumentChanged('edit.mosaic');
-        vscode.postMessage({ command: 'show-toast', text: t('toast.mosaicApplied') });
-    }
-
     if (btnApplyMosaic) {
-        btnApplyMosaic.addEventListener('click', applyMosaicToSelection);
+        btnApplyMosaic.addEventListener('click', showMosaicModal);
     }
 
     // Hook up saving triggers
@@ -3441,6 +3456,163 @@
         performCopyToClipboard(selectedCopyFormat, qualityPercent, selectionOnly);
     }
 
+    function ensureMosaicPreviewCanvas() {
+        if (!mosaicPreviewCanvas) {
+            mosaicPreviewCanvas = document.getElementById('mosaicPreviewCanvas');
+        }
+        if (mosaicPreviewCanvas && !mosaicPreviewCtx) {
+            mosaicPreviewCtx = mosaicPreviewCanvas.getContext('2d');
+        }
+        return !!(mosaicPreviewCanvas && mosaicPreviewCtx);
+    }
+
+    function normalizeMosaicBlockSize(value) {
+        const size = Math.round(Number(value));
+        return Number.isFinite(size)
+            ? Math.max(MOSAIC_MIN_BLOCK_SIZE, Math.min(MOSAIC_MAX_BLOCK_SIZE, size))
+            : MOSAIC_DEFAULT_BLOCK_SIZE;
+    }
+
+    function getMosaicBlockSize() {
+        if (!rngMosaicSize) {
+            return MOSAIC_DEFAULT_BLOCK_SIZE;
+        }
+        return normalizeMosaicBlockSize(rngMosaicSize.value);
+    }
+
+    function setMosaicBlockSize(value) {
+        const size = normalizeMosaicBlockSize(value);
+        if (rngMosaicSize) {
+            rngMosaicSize.value = String(size);
+        }
+        if (mosaicSizeVal) {
+            mosaicSizeVal.textContent = String(size);
+        }
+        return size;
+    }
+
+    function hideMosaicPreview() {
+        if (mosaicPreviewRaf !== null) {
+            cancelAnimationFrame(mosaicPreviewRaf);
+            mosaicPreviewRaf = null;
+        }
+        if (mosaicPreviewCanvas) {
+            mosaicPreviewCanvas.style.display = 'none';
+        }
+    }
+
+    function renderMosaicPreview() {
+        if (!mosaicPreviewState || !cropper || !imageEl || !ensureMosaicPreviewCanvas()) {
+            hideMosaicPreview();
+            return;
+        }
+
+        const imageData = cropper.getImageData();
+        if (!imageData || !imageData.width || !imageData.height || !imageData.naturalWidth || !imageData.naturalHeight) {
+            hideMosaicPreview();
+            return;
+        }
+
+        const previewWidth = Math.max(1, Math.round(imageData.width));
+        const previewHeight = Math.max(1, Math.round(imageData.height));
+        mosaicPreviewCanvas.width = previewWidth;
+        mosaicPreviewCanvas.height = previewHeight;
+        mosaicPreviewCanvas.style.left = `${Math.round(imageData.left || 0)}px`;
+        mosaicPreviewCanvas.style.top = `${Math.round(imageData.top || 0)}px`;
+        mosaicPreviewCanvas.style.width = `${previewWidth}px`;
+        mosaicPreviewCanvas.style.height = `${previewHeight}px`;
+        mosaicPreviewCanvas.style.display = 'block';
+
+        const ctx = mosaicPreviewCtx;
+        ctx.clearRect(0, 0, previewWidth, previewHeight);
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.translate(previewWidth / 2, previewHeight / 2);
+        ctx.rotate(((Number(imageData.rotate) || 0) * Math.PI) / 180);
+        ctx.scale(Number(imageData.scaleX) || 1, Number(imageData.scaleY) || 1);
+        ctx.drawImage(imageEl, -previewWidth / 2, -previewHeight / 2, previewWidth, previewHeight);
+        ctx.restore();
+
+        const previewRect = mosaicLogic.scaleNaturalRectToImageData(mosaicPreviewState.cropData, imageData);
+        if (previewRect) {
+            mosaicLogic.applyMosaicToCanvas(ctx.canvas, previewRect, getMosaicBlockSize());
+        }
+    }
+
+    function scheduleMosaicPreviewRender() {
+        if (!mosaicPreviewState) {
+            hideMosaicPreview();
+            return;
+        }
+        if (mosaicPreviewRaf !== null) {
+            return;
+        }
+        mosaicPreviewRaf = requestAnimationFrame(() => {
+            mosaicPreviewRaf = null;
+            renderMosaicPreview();
+        });
+    }
+
+    function hideMosaicModal() {
+        if (mosaicModal) {
+            mosaicModal.style.display = 'none';
+        }
+        mosaicPreviewState = null;
+        hideMosaicPreview();
+        updateCropInteraction();
+    }
+
+    function showMosaicModal() {
+        if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.cropSelectFirst') });
+            return false;
+        }
+
+        clearMagicWandMask();
+        endMagicWandMode(false);
+        endColorPickerMode();
+        mosaicPreviewState = {
+            cropData: cropper.getData(true),
+            blockSize: setMosaicBlockSize(rngMosaicSize ? rngMosaicSize.value : MOSAIC_DEFAULT_BLOCK_SIZE)
+        };
+
+        if (mosaicModal) {
+            mosaicModal.style.display = 'flex';
+        }
+        updateCropInteraction();
+        scheduleMosaicPreviewRender();
+        if (btnMosaicConfirm) {
+            btnMosaicConfirm.focus();
+        }
+        return true;
+    }
+
+    function commitMosaicSelection() {
+        if (!cropper || !mosaicPreviewState || !chkEnableCrop.checked || !cropper.cropped) {
+            return false;
+        }
+
+        pushHistorySnapshot('edit.mosaic');
+
+        const cropData = cropper.getData(true);
+        const canvas = document.createElement('canvas');
+        canvas.width = originalWidth;
+        canvas.height = originalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imageEl, 0, 0);
+        mosaicLogic.applyMosaicToCanvas(canvas, cropData, getMosaicBlockSize());
+
+        const newSrc = canvas.toDataURL();
+        replaceEditorImageSrc(newSrc);
+        hideMosaicModal();
+        updateSelectionPanelFromCrop();
+        cacheNaturalCropData();
+        notifyDocumentChanged('edit.mosaic');
+        vscode.postMessage({ command: 'show-toast', text: t('toast.mosaicApplied') });
+        return true;
+    }
+
     // Clipboard Copy Engine
     function copyImageToClipboard() {
         if (!cropper) {
@@ -3474,6 +3646,29 @@
     }
     if (copyModalBackdrop) {
         copyModalBackdrop.addEventListener('click', hideCopyModal);
+    }
+
+    if (rngMosaicSize) {
+        rngMosaicSize.addEventListener('input', () => {
+            const size = setMosaicBlockSize(rngMosaicSize.value);
+            if (mosaicPreviewState) {
+                mosaicPreviewState.blockSize = size;
+                scheduleMosaicPreviewRender();
+            }
+        });
+    }
+
+    if (btnMosaicConfirm) {
+        btnMosaicConfirm.addEventListener('click', commitMosaicSelection);
+    }
+    if (btnMosaicCancel) {
+        btnMosaicCancel.addEventListener('click', hideMosaicModal);
+    }
+    if (mosaicModalClose) {
+        mosaicModalClose.addEventListener('click', hideMosaicModal);
+    }
+    if (mosaicModalBackdrop) {
+        mosaicModalBackdrop.addEventListener('click', hideMosaicModal);
     }
 
     // ── Color Picker (Photoshop I key) ─────────────────────────────────────
@@ -4227,7 +4422,8 @@
     document.addEventListener('mousedown', (e) => {
         if (e.target.closest('.context-menu')
             || e.target.closest('.color-modal-panel')
-            || e.target.closest('.copy-modal')) {
+            || e.target.closest('.copy-modal')
+            || e.target.closest('.mosaic-modal')) {
             return;
         }
         dismissShortcutLayers();
@@ -4267,7 +4463,7 @@
     document.getElementById('ctxMosaic').addEventListener('click', (e) => {
         e.stopPropagation();
         contextMenu.style.display = 'none';
-        applyMosaicToSelection();
+        showMosaicModal();
     });
 
     document.getElementById('ctxSave').addEventListener('click', (e) => {
@@ -4349,7 +4545,7 @@
             return true;
         }
         if (shortcutAction === 'mosaic') {
-            applyMosaicToSelection();
+            showMosaicModal();
             return true;
         }
         if (shortcutAction === 'magicWand') {
@@ -4380,6 +4576,17 @@
 
     // Global keyboard listener
     document.addEventListener('keydown', (e) => {
+        if (mosaicModal && mosaicModal.style.display === 'flex') {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hideMosaicModal();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                commitMosaicSelection();
+            }
+            return;
+        }
+
         // Guard input elements so typing is not hijacked
         const activeEl = document.activeElement;
         const isInput = activeEl && (
@@ -4448,6 +4655,10 @@
                 setZLoupeActive(false);
                 return;
             }
+            if (mosaicModal && mosaicModal.style.display === 'flex') {
+                hideMosaicModal();
+                return;
+            }
             if (copyModal && copyModal.style.display === 'flex') {
                 hideCopyModal();
                 return;
@@ -4514,6 +4725,11 @@
 
         // Enter: apply crop selection if crop mode is active
         if (e.key === 'Enter') {
+            if (mosaicModal && mosaicModal.style.display === 'flex') {
+                e.preventDefault();
+                commitMosaicSelection();
+                return;
+            }
             if (copyModal && copyModal.style.display === 'flex') {
                 e.preventDefault();
                 confirmCopyToClipboard();

@@ -77,6 +77,13 @@
   "copyModal.formatJpeg": "JPEG",
   "copyModal.formatWebp": "WebP",
 
+  "mosaicModal.title": "Mosaic Selection",
+  "mosaicModal.close": "Close",
+  "mosaicModal.hint": "Drag the slider to preview the mosaic block size in real time.",
+  "mosaicModal.size": "Block size",
+  "mosaicModal.cancel": "Cancel",
+  "mosaicModal.confirm": "Apply Mosaic",
+
   "shortcuts.title": "⌨️ Keyboard Shortcuts",
   "shortcuts.save": "Save",
   "shortcuts.undo": "Undo",

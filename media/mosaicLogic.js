@@ -106,11 +106,27 @@ function applyMosaicToCanvas(canvas, rect, blockSize) {
     return canvas;
 }
 
+function scaleNaturalRectToImageData(rect, imageData) {
+    if (!rect || !imageData || !imageData.width || !imageData.height || !imageData.naturalWidth || !imageData.naturalHeight) {
+        return null;
+    }
+
+    const xScale = imageData.width / imageData.naturalWidth;
+    const yScale = imageData.height / imageData.naturalHeight;
+    return clampMosaicRect({
+        x: rect.x * xScale,
+        y: rect.y * yScale,
+        width: rect.width * xScale,
+        height: rect.height * yScale
+    }, imageData.width, imageData.height);
+}
+
 const api = {
     normalizeBlockSize,
     clampMosaicRect,
     applyMosaicToImageData,
-    applyMosaicToCanvas
+    applyMosaicToCanvas,
+    scaleNaturalRectToImageData
 };
 
 if (typeof module !== 'undefined' && module.exports) {
