@@ -177,6 +177,7 @@
         shortcutOverlayDismissed = true;
         setShortcutHintsVisible(false);
         hideShortcutHintTooltip();
+        hideMarqueeShortcutTooltip();
         if (contextMenu) {
             contextMenu.style.display = 'none';
         }
@@ -217,6 +218,22 @@
             });
             el.addEventListener('mouseleave', hideShortcutHintTooltip);
         });
+    }
+
+    function hideMarqueeShortcutTooltip() {
+        if (marqueeShortcutTooltip) {
+            marqueeShortcutTooltip.style.display = 'none';
+        }
+    }
+
+    function showMarqueeShortcutTooltip(clientX, clientY) {
+        if (!marqueeShortcutTooltip) {
+            return;
+        }
+
+        marqueeShortcutTooltip.style.display = 'flex';
+        marqueeShortcutTooltip.style.left = `${clientX + 14}px`;
+        marqueeShortcutTooltip.style.top = `${clientY + 14}px`;
     }
 
     async function loadWebviewL10n() {
@@ -342,6 +359,7 @@
     const btnMosaicConfirm = document.getElementById('btnMosaicConfirm');
     const rngMosaicSize = document.getElementById('rngMosaicSize');
     const mosaicSizeVal = document.getElementById('mosaicSizeVal');
+    const marqueeShortcutTooltip = document.getElementById('marqueeShortcutTooltip');
     const copyScopeSection = document.getElementById('copyScopeSection');
     const chkCopySelectionOnly = document.getElementById('chkCopySelectionOnly');
     const copyScopeInfo = document.getElementById('copyScopeInfo');
@@ -3559,11 +3577,13 @@
             mosaicModal.style.display = 'none';
         }
         mosaicPreviewState = null;
+        hideMarqueeShortcutTooltip();
         hideMosaicPreview();
         updateCropInteraction();
     }
 
     function showMosaicModal() {
+        hideMarqueeShortcutTooltip();
         if (!cropper || !chkEnableCrop.checked || !cropper.cropped) {
             vscode.postMessage({ command: 'show-toast', text: t('toast.cropSelectFirst') });
             return false;
@@ -4294,6 +4314,23 @@
     workspace.addEventListener('mouseleave', () => {
         setSelectionPanelValue(lblMarqueeX, '— px');
         setSelectionPanelValue(lblMarqueeY, '— px');
+        hideMarqueeShortcutTooltip();
+    }, true);
+
+    workspace.addEventListener('mousemove', (e) => {
+        const onMarqueeFace = !!(cropper && chkEnableCrop.checked && cropper.cropped && !marqueeGestureState
+            && !(mosaicModal && mosaicModal.style.display === 'flex')
+            && !(copyModal && copyModal.style.display === 'flex')
+            && !(colorModal && colorModal.style.display === 'flex')
+            && e.target.closest('.cropper-face')
+            && !e.target.closest('.cropper-point, .cropper-line, .cropper-center'));
+
+        if (!onMarqueeFace) {
+            hideMarqueeShortcutTooltip();
+            return;
+        }
+
+        showMarqueeShortcutTooltip(e.clientX, e.clientY);
     }, true);
 
     // Workspace mousemove handler during capture phase to implement Eyedropper real-time live preview and tooltip tracking

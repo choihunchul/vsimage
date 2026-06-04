@@ -108,6 +108,18 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('resetSelectionPanel();'));
     });
 
+    test('shows shortcut tooltips when hovering inside the marquee selection', () => {
+        assert.ok(provider.includes('marqueeShortcutTooltip'));
+        assert.ok(provider.includes('marquee-shortcut-tooltip-row'));
+        assert.ok(provider.includes('shortcuts.eraseSelection'));
+        assert.ok(provider.includes('shortcuts.mosaicSelection'));
+        assert.ok(styles.includes('.marquee-shortcut-tooltip'));
+        assert.ok(styles.includes('.marquee-shortcut-tooltip-row'));
+        assert.ok(editor.includes('showMarqueeShortcutTooltip'));
+        assert.ok(editor.includes('hideMarqueeShortcutTooltip'));
+        assert.ok(editor.includes("e.target.closest('.cropper-face')"));
+    });
+
     test('keeps the collapsed sidebar strip wired for hover reopen', () => {
         assert.ok(editor.includes('sidebar-controls-collapsed'));
         assert.ok(editor.includes('handleSidebarAutoCollapseMouseEnter'));
