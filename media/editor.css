@@ -615,6 +615,25 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
     gap: 8px;
 }
 
+.resize-dimension-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.resize-dimension-field label {
+    display: inline-block;
+    margin-bottom: 0;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.resize-dimension-field .form-control {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .btn-accent {
     position: relative;
     background-color: var(--btn-bg);

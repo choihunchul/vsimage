@@ -1,6 +1,10 @@
 # VS Code Image Editor (vsimage)
 
-Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, rotate, flip, export, and pick colors without leaving the editor.
+Edit PNG, JPEG, WebP, and GIF images directly inside VS Code.
+
+vsimage is a lightweight, casual image tool for development workflows: quick crop, resize, mosaic, rotate, flip, and export without leaving the editor. It is intentionally focused on everyday editing tasks rather than being a full-blown professional image editor.
+
+It also aims to feel familiar if you already use Photoshop, with shortcuts and interactions that stay as close to that style as practical so you can work quickly without relearning basic muscle memory.
 
 ![Version](https://img.shields.io/github/v/release/choihunchul/vsimage?label=version)
 ![License](https://img.shields.io/github/license/choihunchul/vsimage)
@@ -9,9 +13,9 @@ Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, r
 
 - **Default image editor** for `png`, `jpg`, `jpeg`, `webp`, `gif` (opens in vsimage on double-click)
 - **Explorer / tab context menu** — *Edit with VS Code Image Editor* (`vsimage: Open with Image Editor`)
-- **Crop** — presets (auto, free, 1:1, 16:9, 4:3, circle), keyboard marquee tools
-- **Magic wand** — 보완 중입니다. 현재 UI에서는 숨겨져 있고, 기능은 내부 정리 중입니다.
+- **Crop** — quick presets (auto, free, 1:1, 16:9, 4:3, circle) and marquee shortcuts for everyday trimming
 - **Resize** — width/height, scale slider (10–200%), aspect-ratio lock; stepped downscale for sharper shrinks
+- **Mosaic** — simple block mosaic for hiding small areas while working
 - **Transform** — rotate, flip, toolbar zoom, pan (**H** or **Space** + drag)
 - **Zoom loupe** — hold **Z** and drag on the image; magnified preview on the canvas + selection outline
 - **Edit history** — thumbnail snapshots with one-click restore
@@ -38,7 +42,7 @@ If an image already opened in another viewer, use **Reopen Editor With…** → 
 ### Workspace layout
 
 - **Canvas** — image, rulers, scroll/zoom; floating toolbar (zoom, rotate, flip).
-- **Sidebar** — properties, crop, resize, history, save/export.
+- **Sidebar** — properties, quick crop, quick resize, history, save/export.
 - Hold **Cmd/Ctrl** on the canvas to show the keyboard shortcut overlay.
 
 ### Crop & marquee

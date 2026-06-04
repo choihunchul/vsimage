@@ -216,6 +216,20 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("setPercentSpan('resizeScaleVal', String(percent))"));
     });
 
+    test('live resize preview resizes the visible canvas and caps it to the viewport', () => {
+        assert.ok(!provider.includes('lblResizePreview'));
+        assert.ok(editor.includes('applyResizePreviewZoom(percent)'));
+        assert.ok(editor.includes('const previewRatio = resizePanelLogic.resolveResizePreviewZoomRatio'));
+        assert.ok(editor.includes('applyZoomTo(Math.min(previewRatio, fitRatio))'));
+        assert.ok(editor.includes('updateResizeApplyButtonState(percent)'));
+    });
+
+    test('disables the resize apply button when the scale is 100%', () => {
+        assert.ok(editor.includes('shouldDisableResizeApplyButton'));
+        assert.ok(editor.includes('btnApplyResize.disabled = shouldDisable'));
+        assert.ok(editor.includes('updateResizeApplyButtonState(scalePercent)'));
+    });
+
     test('rounds resize panel width and height before writing them into inputs', () => {
         assert.ok(editor.includes('Math.max(0, Math.round(Number(panel.width) || 0))'));
         assert.ok(editor.includes('Math.max(0, Math.round(Number(panel.height) || 0))'));

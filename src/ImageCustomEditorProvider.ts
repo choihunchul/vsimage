@@ -592,12 +592,12 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="section-card">
                             <div class="section-title" data-i18n="sidebar.resize"></div>
                             <div class="control-group">
-                                <div class="input-row">
-                                    <div>
+                                <div class="input-row resize-dimension-row">
+                                    <div class="resize-dimension-field">
                                         <label data-i18n="sidebar.width"></label>
                                         <input type="number" id="txtWidth" class="form-control" min="1" step="1" inputmode="numeric">
                                     </div>
-                                    <div>
+                                    <div class="resize-dimension-field">
                                         <label data-i18n="sidebar.height"></label>
                                         <input type="number" id="txtHeight" class="form-control" min="1" step="1" inputmode="numeric">
                                     </div>

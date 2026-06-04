@@ -2655,6 +2655,7 @@
             rngResizeScale.value = scalePercent;
         }
         setPercentSpan('resizeScaleVal', scalePercent);
+        updateResizeApplyButtonState(scalePercent);
     }
 
     function syncResizeInputsToOriginal() {
@@ -2671,6 +2672,29 @@
         );
         txtWidth.value = dims.width;
         txtHeight.value = dims.height;
+        applyResizePreviewZoom(percent);
+        updateResizeApplyButtonState(percent);
+    }
+
+    function updateResizeApplyButtonState(scalePercent) {
+        if (!btnApplyResize) {
+            return;
+        }
+        const shouldDisable = resizePanelLogic.shouldDisableResizeApplyButton
+            ? resizePanelLogic.shouldDisableResizeApplyButton(scalePercent)
+            : Math.round(Number(scalePercent) || 100) === 100;
+        btnApplyResize.disabled = shouldDisable;
+    }
+
+    function applyResizePreviewZoom(scalePercent) {
+        if (!cropper) {
+            return;
+        }
+        const previewRatio = resizePanelLogic.resolveResizePreviewZoomRatio
+            ? resizePanelLogic.resolveResizePreviewZoomRatio(scalePercent)
+            : Math.max(0, Math.round(Number(scalePercent) || 100)) / 100;
+        const fitRatio = getViewportFitRatio();
+        applyZoomTo(Math.min(previewRatio, fitRatio));
     }
 
     function resetSharpenAdjust() {
@@ -2779,10 +2803,13 @@
         }
         rngResizeScale.value = percent;
         setPercentSpan('resizeScaleVal', percent);
+        applyResizePreviewZoom(percent);
+        updateResizeApplyButtonState(percent);
     }
 
     function updateResizeInputsFromCrop() {
-        if (!cropper) {
+        if (!cropper || !resizePanelLogic.shouldUpdateResizeInputsFromCrop
+            || !resizePanelLogic.shouldUpdateResizeInputsFromCrop(chkEnableCrop.checked, cropper.cropped)) {
             return;
         }
         applyResizePanelState(resizePanelLogic.buildResizePanelFromCrop(cropper.getData()));

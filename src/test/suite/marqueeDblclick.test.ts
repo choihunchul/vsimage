@@ -17,6 +17,18 @@ const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.j
         point: { x: number; y: number },
         crop: { x: number; y: number; width: number; height: number }
     ) => boolean;
+    resolveModifierMarqueeBox: (
+        state: {
+            startCropData?: { x: number; y: number; width: number; height: number } | null;
+            startPoint?: { x: number; y: number } | null;
+            currentPoint?: { x: number; y: number } | null;
+            originalWidth: number;
+            originalHeight: number;
+            shiftKey?: boolean;
+            altKey?: boolean;
+            spacePressed?: boolean;
+        }
+    ) => { x: number; y: number; width: number; height: number } | null;
     getMarqueeDblClickToggleAction: (
         crop: { x: number; y: number; width: number; height: number },
         ow: number,
@@ -24,10 +36,12 @@ const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.j
         tolerance?: number
     ) => 'trimToContent' | 'expandToFull' | null;
     canHandleMarqueeDblClick: (state: Record<string, boolean>) => boolean;
+    isImageZoomBelowFull: (zoomRatio: number, epsilon?: number) => boolean;
     shouldInvokeMarqueeDblClickToggle: (
         state: Record<string, boolean>,
-        point: { x: number; y: number },
-        crop: { x: number; y: number; width: number; height: number }
+        point: { x: number; y: number } | null,
+        crop: { x: number; y: number; width: number; height: number },
+        opts?: { marqueeTargetHit?: boolean }
     ) => boolean;
     shouldInvokeImageZoomDblClick: (
         state: Record<string, boolean>,
@@ -85,6 +99,37 @@ suite('Marquee double-click logic', () => {
         assert.strictEqual(logic.isPointInCropSelection({ x: 500, y: 350 }, partialCrop), false);
     });
 
+    test('resolveModifierMarqueeBox supports alt-center resize and space-move', () => {
+        const altBox = logic.resolveModifierMarqueeBox({
+            startPoint: { x: 200, y: 200 },
+            currentPoint: { x: 260, y: 240 },
+            originalWidth: OW,
+            originalHeight: OH,
+            altKey: true
+        });
+        assert.deepStrictEqual(altBox, { x: 140, y: 160, width: 120, height: 80 });
+
+        const centeredSquare = logic.resolveModifierMarqueeBox({
+            startPoint: { x: 200, y: 200 },
+            currentPoint: { x: 260, y: 240 },
+            originalWidth: OW,
+            originalHeight: OH,
+            altKey: true,
+            shiftKey: true
+        });
+        assert.deepStrictEqual(centeredSquare, { x: 140, y: 140, width: 120, height: 120 });
+
+        const moved = logic.resolveModifierMarqueeBox({
+            startCropData: partialCrop,
+            startPoint: { x: 150, y: 120 },
+            currentPoint: { x: 180, y: 135 },
+            originalWidth: OW,
+            originalHeight: OH,
+            spacePressed: true
+        });
+        assert.deepStrictEqual(moved, { x: 130, y: 65, width: 400, height: 300 });
+    });
+
     test('canHandleMarqueeDblClick rejects inactive modes and outside canvas', () => {
         assert.strictEqual(logic.canHandleMarqueeDblClick(baseState), true);
         assert.strictEqual(logic.canHandleMarqueeDblClick({ ...baseState, cropEnabled: false }), false);
@@ -107,6 +152,23 @@ suite('Marquee double-click logic', () => {
             logic.shouldInvokeMarqueeDblClickToggle({ ...baseState, spacePressed: true }, { x: 200, y: 120 }, partialCrop),
             false
         );
+    });
+
+    test('shouldInvokeMarqueeDblClickToggle accepts cropper face when point is null', () => {
+        assert.strictEqual(
+            logic.shouldInvokeMarqueeDblClickToggle(baseState, null, partialCrop, { marqueeTargetHit: true }),
+            true
+        );
+        assert.strictEqual(
+            logic.shouldInvokeMarqueeDblClickToggle(baseState, null, partialCrop, { marqueeTargetHit: false }),
+            false
+        );
+    });
+
+    test('isImageZoomBelowFull detects viewport fit vs 100%', () => {
+        assert.strictEqual(logic.isImageZoomBelowFull(0.8), true);
+        assert.strictEqual(logic.isImageZoomBelowFull(1), false);
+        assert.strictEqual(logic.isImageZoomBelowFull(0.996), false);
     });
 
     test('clampCropBox keeps selection within image bounds', () => {

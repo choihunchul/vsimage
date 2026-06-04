@@ -20,6 +20,15 @@ export function activate(context: vscode.ExtensionContext) {
             void provider.openImageWithEditor(uri);
         })
     );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vsimage.runShortcut', (payload?: { action?: string } | string) => {
+            const action = typeof payload === 'string' ? payload : payload?.action;
+            if (action) {
+                void provider.runShortcut(action);
+            }
+        })
+    );
 }
 
 export function deactivate() {}

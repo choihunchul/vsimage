@@ -9,7 +9,13 @@ node_modules/**
 webpack.config.js
 tsconfig.json
 **/*.ts
-!dist/**
+!dist/extension.js
+dist/**/*.map
+dist/*.map
+.gitignore
+docs/**
 .superpowers/**
 scripts/**
+assets/**
 *.vsix
+artifacts/**

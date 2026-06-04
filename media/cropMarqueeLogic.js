@@ -43,6 +43,66 @@ function isPointInCropSelection(point, cropData) {
         && point.y < cropData.y + cropData.height;
 }
 
+function hasValidCropBox(cropData) {
+    return Boolean(cropData)
+        && Number(cropData.width) > 0
+        && Number(cropData.height) > 0;
+}
+
+function resolveModifierMarqueeBox(state) {
+    if (!state || !state.startPoint || !state.currentPoint) {
+        return null;
+    }
+
+    const {
+        startCropData,
+        startPoint,
+        currentPoint,
+        originalWidth,
+        originalHeight,
+        shiftKey,
+        altKey,
+        spacePressed
+    } = state;
+
+    const hasStartBox = hasValidCropBox(startCropData);
+
+    if (spacePressed && hasStartBox) {
+        return clampCropBox(
+            startCropData.x + (currentPoint.x - startPoint.x),
+            startCropData.y + (currentPoint.y - startPoint.y),
+            startCropData.width,
+            startCropData.height,
+            originalWidth,
+            originalHeight
+        );
+    }
+
+    if (!altKey) {
+        return null;
+    }
+
+    const anchorX = hasStartBox ? startCropData.x + (startCropData.width / 2) : startPoint.x;
+    const anchorY = hasStartBox ? startCropData.y + (startCropData.height / 2) : startPoint.y;
+    let halfWidth = Math.abs(currentPoint.x - anchorX);
+    let halfHeight = Math.abs(currentPoint.y - anchorY);
+
+    if (shiftKey) {
+        const half = Math.max(halfWidth, halfHeight);
+        halfWidth = half;
+        halfHeight = half;
+    }
+
+    return clampCropBox(
+        anchorX - halfWidth,
+        anchorY - halfHeight,
+        halfWidth * 2,
+        halfHeight * 2,
+        originalWidth,
+        originalHeight
+    );
+}
+
 /** @returns {'trimToContent'|'expandToFull'|null} */
 function getMarqueeDblClickToggleAction(cropData, originalWidth, originalHeight, tolerance = 2) {
     if (!cropData || originalWidth <= 0 || originalHeight <= 0) {
@@ -69,9 +129,16 @@ function canHandleMarqueeDblClick(state) {
     return true;
 }
 
-function shouldInvokeMarqueeDblClickToggle(state, point, cropData) {
+function isImageZoomBelowFull(zoomRatio, epsilon = 0.005) {
+    return Math.abs(zoomRatio - 1) >= epsilon;
+}
+
+function shouldInvokeMarqueeDblClickToggle(state, point, cropData, opts) {
     if (!canHandleMarqueeDblClick(state)) {
         return false;
+    }
+    if (opts && opts.marqueeTargetHit) {
+        return true;
     }
     return isPointInCropSelection(point, cropData);
 }
@@ -92,6 +159,51 @@ function canHandleImageZoomDblClick(state) {
     return true;
 }
 
+function isValidNaturalCropSnapshot(cropData) {
+    return Boolean(cropData)
+        && Number(cropData.width) > 0
+        && Number(cropData.height) > 0;
+}
+
+/** Whether to keep natural crop across zoom (setData after zoom). */
+function shouldSnapshotCropForZoom(cropped, cropData) {
+    return Boolean(cropped) && isValidNaturalCropSnapshot(cropData);
+}
+
+function cloneNaturalCropSnapshot(cropData) {
+    if (!isValidNaturalCropSnapshot(cropData)) {
+        return null;
+    }
+    return {
+        x: cropData.x,
+        y: cropData.y,
+        width: cropData.width,
+        height: cropData.height
+    };
+}
+
+/**
+ * Scale crop box in container space when canvas zoom factor changes.
+ * @returns {object|null} next crop box or null if no scale needed
+ */
+function scaleCropBoxAfterCanvasZoom(prevCanvas, prevBox, nextCanvas) {
+    if (!prevCanvas || !prevBox || !nextCanvas || !prevCanvas.width) {
+        return null;
+    }
+    const factor = nextCanvas.width / prevCanvas.width;
+    if (Math.abs(factor - 1) < 0.0001) {
+        return null;
+    }
+    const relLeft = prevBox.left - prevCanvas.left;
+    const relTop = prevBox.top - prevCanvas.top;
+    return {
+        left: nextCanvas.left + relLeft * factor,
+        top: nextCanvas.top + relTop * factor,
+        width: prevBox.width * factor,
+        height: prevBox.height * factor
+    };
+}
+
 /** Double-click on image (no active marquee hit) toggles 100% ↔ viewport fit. */
 function shouldInvokeImageZoomDblClick(state, point, cropData) {
     if (!point || !canHandleImageZoomDblClick(state)) {
@@ -108,11 +220,17 @@ const api = {
     fullImageCropBounds,
     isMarqueeFullImageNatural,
     isPointInCropSelection,
+    resolveModifierMarqueeBox,
     getMarqueeDblClickToggleAction,
     canHandleMarqueeDblClick,
+    isImageZoomBelowFull,
     shouldInvokeMarqueeDblClickToggle,
     canHandleImageZoomDblClick,
-    shouldInvokeImageZoomDblClick
+    shouldInvokeImageZoomDblClick,
+    isValidNaturalCropSnapshot,
+    shouldSnapshotCropForZoom,
+    cloneNaturalCropSnapshot,
+    scaleCropBoxAfterCanvasZoom
 };
 
 if (typeof module !== 'undefined' && module.exports) {

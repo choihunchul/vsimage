@@ -7,7 +7,7 @@ cd "$ROOT"
 echo "==> Building VSIX..."
 npm run vsix
 
-VSIX="$(ls -t vsimage-*.vsix | head -1)"
+VSIX="artifacts/vsimage.vsix"
 echo "==> Package: $VSIX"
 
 if [[ -z "${VSCE_PAT:-}" ]]; then
