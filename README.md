@@ -10,15 +10,15 @@ Edit PNG, JPEG, WebP, and GIF images directly inside VS Code — crop, resize, r
 - **Default image editor** for `png`, `jpg`, `jpeg`, `webp`, `gif` (opens in vsimage on double-click)
 - **Explorer / tab context menu** — *Edit with VS Code Image Editor* (`vsimage: Open with Image Editor`)
 - **Crop** — presets (auto, free, 1:1, 16:9, 4:3, circle), keyboard marquee tools
-- **Magic wand** — select similar-color regions (tolerance slider, **W** + click)
+- **Magic wand** — 보완 중입니다. 현재 UI에서는 숨겨져 있고, 기능은 내부 정리 중입니다.
 - **Resize** — width/height, scale slider (10–200%), aspect-ratio lock; stepped downscale for sharper shrinks
-- **Transform** — rotate, flip, toolbar zoom, pan (**Space** + drag)
+- **Transform** — rotate, flip, toolbar zoom, pan (**H** or **Space** + drag)
 - **Zoom loupe** — hold **Z** and drag on the image; magnified preview on the canvas + selection outline
 - **Edit history** — thumbnail snapshots with one-click restore
 - **Save flow** — dirty-state tracking, save prompt on close, untitled document support
 - **Export** as PNG, JPEG, or WebP with quality control
 - **Clipboard** — paste images in, copy edited images out (format & selection options)
-- **Color picker** — hold **Option/Alt**, move over the image, click to sample; copy as HEX / RGB / RGBA / HSL / HSV / CMYK
+- **Color picker** — hold **I**, move over the image, click to sample; copy as HEX / RGB / RGBA / HSL / HSV / CMYK
 - **Pixel rulers** with zoom-aware ticks
 - **Right-click menu** on the canvas (copy, erase selection, flip, save, undo, reset zoom)
 - **Undo** for destructive edits (**Cmd/Ctrl+Z**)
@@ -37,7 +37,7 @@ If an image already opened in another viewer, use **Reopen Editor With…** → 
 
 ### Workspace layout
 
-- **Canvas** — image, rulers, scroll/zoom; floating toolbar (zoom, rotate, flip, magic wand).
+- **Canvas** — image, rulers, scroll/zoom; floating toolbar (zoom, rotate, flip).
 - **Sidebar** — properties, crop, resize, history, save/export.
 - Hold **Cmd/Ctrl** on the canvas to show the keyboard shortcut overlay.
 
@@ -45,7 +45,7 @@ If an image already opened in another viewer, use **Reopen Editor With…** → 
 
 | Action | Input |
 |--------|--------|
-| Toggle crop mode | **C** |
+| Toggle crop mode | **C** / **M** |
 | Select all | **Cmd/Ctrl+A** |
 | Shrink marquee (1px per side) | **`[`** |
 | Expand marquee (1px per side) | **`]`** |
@@ -60,8 +60,10 @@ If an image already opened in another viewer, use **Reopen Editor With…** → 
 | Action | Input |
 |--------|--------|
 | Zoom in / out | **+** / **-** or toolbar |
-| Toggle **100% ↔ fit viewport** | **Cmd/Ctrl+0**, toolbar reset, or **double-click** on image when crop is off / outside the marquee |
-| Pan | **Space** + drag |
+| Fit viewport | **Cmd/Ctrl+0** or toolbar reset |
+| View at 100% | **Cmd/Ctrl+1** |
+| Toggle **100% ↔ fit viewport** | **Double-click** on image when crop is off / outside the marquee |
+| Pan | **H** or **Space** + drag |
 | Magnify region on canvas | Hold **Z** + drag (preview panel bottom-right; **Esc** or release **Z** to exit) |
 
 When crop mode is on, **double-click inside the marquee** still toggles full image ↔ trim to content. **Double-click outside** the marquee (or with crop off) toggles zoom fit ↔ 100%.
@@ -70,13 +72,13 @@ When crop mode is on, **double-click inside the marquee** still toggles full ima
 
 1. Set target width/height or use the scale slider.
 2. Click **Apply Resize** — image updates; sidebar shows the new pixel size at **100%** scale.
-3. Large downscales use **stepped resizing** to reduce blur.
+3. Large downscales use **50% stepped resizing**; adjust **Sharpen** with the slider after **Apply Resize**.
 
 After **crop** or **resize**, the resize panel reflects the **current image dimensions** (not cleared to zero).
 
 ### Color & clipboard
 
-- **Option/Alt** — live color preview; click to open format modal and copy.
+- **I** — live color preview; click to open format modal and copy.
 - **Cmd/Ctrl+C** — copy image (optional format modal).
 - **Cmd/Ctrl+S** — save.
 
@@ -88,16 +90,17 @@ After **crop** or **resize**, the resize panel reflects the **current image dime
 | `Cmd/Ctrl + Z` | Undo |
 | `Cmd/Ctrl + C` | Copy image to clipboard |
 | `Cmd/Ctrl + A` | Select all (crop) |
-| `Cmd/Ctrl + 0` | Toggle 100% ↔ fit to viewport |
-| `Cmd/Ctrl + +` / `-` | Zoom in / out |
-| `Cmd/Ctrl + [` / `]` | Rotate left / right |
-| `Space + Drag` | Pan |
+| `Cmd/Ctrl + 0` | Fit to viewport |
+| `Cmd/Ctrl + 1` | View at 100% |
+| `+` / `-` | Zoom in / out |
+| `R` / `Shift + R` | Rotate right / left |
+| `H` / `Space + Drag` | Pan |
 | `Z` (hold) + Drag | Magnify area on canvas |
 | `Double-click` | 100% ↔ fit (no marquee / outside selection) |
 | `Double-click` (in marquee) | Full image ↔ trim to content |
-| `C` | Toggle crop mode |
-| `W + Click` | Magic wand select |
-| `Option/Alt + Click` | Pick color |
+| `C` / `M` | Toggle crop mode |
+| `W + Click` | Magic wand select (보완 중, 현재 UI에서 숨김) |
+| `I + Click` | Pick color |
 | `[` / `]` | Shrink / expand marquee (1px per side) |
 | `↑ ↓ ← →` | Move marquee |
 | `Enter` | Apply crop |
@@ -122,11 +125,10 @@ npm run compile-tests    # test TypeScript → out/
 npm test                 # Extension Development Host integration tests (F5 environment)
 ```
 
-Quick unit tests (marquee / resize panel logic, no VS Code runtime):
+Quick unit tests (feature logic and webview contracts, no VS Code runtime):
 
 ```bash
-npm run compile-tests
-npx mocha out/src/test/suite/marqueeDblclick.test.js out/src/test/suite/resizePanel.test.js --ui tdd
+npm run test:unit
 ```
 
 Press **F5** in VS Code to launch the **Extension Development Host**.

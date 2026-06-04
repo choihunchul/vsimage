@@ -52,9 +52,6 @@ function getShortcutAction(event) {
     if (!hasToolModifier(event) && isLetter(event, 'c')) {
         return 'crop';
     }
-    if (!hasToolModifier(event) && isLetter(event, 'w')) {
-        return 'magicWand';
-    }
     if (!hasToolModifier(event) && isLetter(event, 'r')) {
         return event.shiftKey ? 'rotateLeft' : 'rotateRight';
     }

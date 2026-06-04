@@ -188,6 +188,19 @@ body, html {
     left: 0;
     pointer-events: none;
     z-index: 20;
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .magic-wand-overlay {
+        animation: none;
+    }
+}
+
+#btnMagicWand,
+.magic-wand-controls,
+.magic-wand-shortcut-row {
+    display: none !important;
 }
 
 .magic-wand-active,

@@ -514,7 +514,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 <button class="tb-btn" id="btnFlipH" data-i18n-title="toolbar.flipH">↔</button>
                                 <button class="tb-btn" id="btnFlipV" data-i18n-title="toolbar.flipV">↕</button>
                                 <div class="tb-divider"></div>
-                                <button class="tb-btn" id="btnReset" data-shortcut="mod+0" data-i18n-title="toolbar.reset"><span data-i18n="toolbar.reset"></span><span class="ui-shortcut-badge"></span></button>
+                                <button class="tb-btn" id="btnReset" data-shortcut="mod+0" data-i18n-title="toolbar.reset"><span id="lblResetText" data-i18n="toolbar.reset"></span><span class="ui-shortcut-badge"></span></button>
                                 <div class="tb-divider"></div>
                                 <button class="tb-btn" id="btnMagicWand" data-shortcut="W" data-i18n-title="toolbar.magicWand">🪄<span class="ui-shortcut-badge"></span></button>
                             </div>
@@ -579,7 +579,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             </div>
                             <button class="btn-accent" id="btnApplyCrop" data-shortcut="Enter"><span data-i18n="sidebar.applyCrop"></span><span class="ui-shortcut-badge"></span></button>
                             <button class="btn-secondary" id="btnApplyMosaic" style="margin-top: 8px;" data-i18n="sidebar.applyMosaic"></button>
-                            <div class="control-group" style="margin-top: 12px; margin-bottom: 0;">
+                            <div class="control-group magic-wand-controls" style="margin-top: 12px; margin-bottom: 0;">
                                 <label data-i18n="sidebar.magicWand"></label>
                                 <div class="slider-row">
                                     <input type="range" id="rngMagicWandTolerance" min="0" max="128" value="32">
@@ -809,7 +809,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="shortcut-row"><span class="shortcut-key">↑ ↓ ← →</span><span class="shortcut-desc" data-i18n="shortcuts.moveMarquee"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">M</span><span class="shortcut-desc" data-i18n="shortcuts.marqueeSelect"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-desc" data-i18n="shortcuts.toggleCrop"></span></div>
-                        <div class="shortcut-row"><span class="shortcut-key">W + Click</span><span class="shortcut-desc" data-i18n="shortcuts.magicWand"></span></div>
+                        <div class="shortcut-row magic-wand-shortcut-row"><span class="shortcut-key">W + Click</span><span class="shortcut-desc" data-i18n="shortcuts.magicWand"></span></div>
                     </div>
                 </div>
 

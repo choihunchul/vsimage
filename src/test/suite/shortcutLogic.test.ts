@@ -40,10 +40,10 @@ suite('Photoshop-style shortcuts', () => {
         assert.strictEqual(shortcuts.getShortcutAction({ key: '-', ctrlKey: true }), null);
     });
 
-    test('keeps crop and magic wand tool keys', () => {
+    test('keeps crop key but disables the magic wand shortcut', () => {
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'c' }), 'crop');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'm' }), 'marquee');
-        assert.strictEqual(shortcuts.getShortcutAction({ key: 'W' }), 'magicWand');
+        assert.strictEqual(shortcuts.getShortcutAction({ key: 'W' }), null);
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'x' }), 'mosaic');
     });
 
@@ -53,7 +53,7 @@ suite('Photoshop-style shortcuts', () => {
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅁ', code: 'KeyA', metaKey: true }), 'selectAll');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅊ', code: 'KeyC' }), 'crop');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅁ', code: 'KeyM' }), 'marquee');
-        assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅈ', code: 'KeyW' }), 'magicWand');
+        assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅈ', code: 'KeyW' }), null);
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅌ', code: 'KeyX' }), 'mosaic');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㄱ', code: 'KeyR' }), 'rotateRight');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㄱ', code: 'KeyR', shiftKey: true }), 'rotateLeft');

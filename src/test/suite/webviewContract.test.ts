@@ -48,6 +48,13 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('applyZoomAction(shortcutAction)'));
     });
 
+    test('syncs the bottom zoom toggle label from the live zoom state', () => {
+        assert.ok(editor.includes('updateZoomToggleButton()'));
+        assert.ok(editor.includes('resolveToggleZoomTargetRatio(currentRatio, fitRatio)'));
+        assert.ok(editor.includes("document.getElementById('btnReset').addEventListener('click'"));
+        assert.ok(provider.includes('lblResetText'));
+    });
+
     test('routes rotate and flip entry points through shared adapters', () => {
         assert.ok(editor.includes("applyRotationAction('rotateLeft')"));
         assert.ok(editor.includes("applyRotationAction('rotateRight')"));
@@ -58,7 +65,7 @@ suite('Webview contracts', () => {
 
     test('keeps stable save and context-menu reset contracts', () => {
         assert.ok(editor.includes('saveExportLogic.commandForBlobType(type)'));
-        assert.ok(editor.includes("document.getElementById('btnReset').click()"));
+        assert.ok(editor.includes("applyZoomTo(getViewportFitRatio())"));
         assert.ok(provider.includes('ctxMosaic'));
         assert.ok(provider.includes('data-shortcut="X"'));
     });
@@ -191,6 +198,13 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('shortcuts.mosaicSelection'));
     });
 
+    test('hides the magic wand UI while leaving the feature wiring dormant', () => {
+        assert.ok(styles.includes('#btnMagicWand'));
+        assert.ok(styles.includes('.magic-wand-controls'));
+        assert.ok(styles.includes('.magic-wand-shortcut-row'));
+        assert.ok(styles.includes('display: none !important;'));
+    });
+
     test('slows the sidebar collapse transition down a bit', () => {
         assert.ok(styles.includes('transition: width 480ms ease, min-width 480ms ease, flex-basis 480ms ease, padding 480ms ease;'));
         assert.ok(styles.includes('transition-duration: 240ms;'));
@@ -218,7 +232,7 @@ suite('Webview contracts', () => {
 
     test('bridges VS Code webview keybindings into editor shortcuts', () => {
         const keybindings = manifest.contributes?.keybindings ?? [];
-        const bridgedActions = ['save', 'undo', 'copy', 'selectAll', 'marquee', 'crop', 'mosaic', 'magicWand', 'rotateLeft', 'rotateRight', 'zoomIn', 'zoomOut', 'fitViewport', 'actualPixels'];
+        const bridgedActions = ['save', 'undo', 'copy', 'selectAll', 'marquee', 'crop', 'mosaic', 'rotateLeft', 'rotateRight', 'zoomIn', 'zoomOut', 'fitViewport', 'actualPixels'];
 
         for (const action of bridgedActions) {
             const binding = keybindings.find(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === action);
@@ -234,6 +248,7 @@ suite('Webview contracts', () => {
 
         const mosaicBindings = keybindings.filter(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'mosaic');
         assert.ok(mosaicBindings.some(item => item.key === 'x'));
+        assert.ok(!keybindings.some(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'magicWand'));
 
         assert.ok(extension.includes("provider.runShortcut(action)"));
         assert.ok(provider.includes("postMessage({ command: 'run-shortcut', action })"));

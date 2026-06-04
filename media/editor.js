@@ -274,6 +274,8 @@
     const rngSharpen = document.getElementById('rngSharpen');
     const btnApplyCrop = document.getElementById('btnApplyCrop');
     const btnApplyMosaic = document.getElementById('btnApplyMosaic');
+    const btnReset = document.getElementById('btnReset');
+    const lblResetText = document.getElementById('lblResetText');
 
     const selFormat = document.getElementById('selFormat');
     const qualitySection = document.getElementById('qualitySection');
@@ -1447,6 +1449,7 @@
         if (mosaicModal && mosaicModal.style.display === 'flex') {
             scheduleMosaicPreviewRender();
         }
+        updateZoomToggleButton();
     }
 
     function applyZoom(delta) {
@@ -2575,6 +2578,7 @@
                         if (!afterResize) {
                             captureInitialFitRatio();
                         }
+                        updateZoomToggleButton();
                     });
                     updateCropInteraction();
                     if (resizePanelLogic.shouldSyncResizePanelFromImage(chkEnableCrop.checked, cropper.cropped)) {
@@ -2790,6 +2794,23 @@
         if (ratio != null) {
             lblZoomPercent.textContent = `${zoomLogic.zoomRatioToPercent(ratio)}%`;
         }
+        updateZoomToggleButton();
+    }
+
+    function updateZoomToggleButton() {
+        if (!btnReset || !cropper) {
+            return;
+        }
+
+        const currentRatio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData());
+        const fitRatio = getViewportFitRatio();
+        const targetRatio = zoomLogic.resolveToggleZoomTargetRatio(currentRatio, fitRatio);
+        const isActualPixelsTarget = Math.abs(targetRatio - 1) < zoomLogic.DEFAULT_ZOOM_EPSILON;
+
+        if (lblResetText) {
+            lblResetText.textContent = isActualPixelsTarget ? '100%' : t('shortcuts.zoomFit');
+        }
+        btnReset.title = isActualPixelsTarget ? t('shortcuts.zoomActualPixels') : t('shortcuts.zoomFit');
     }
 
     function captureInitialFitRatio() {
@@ -3223,7 +3244,7 @@
         applyFlipAction('flipV');
     });
     document.getElementById('btnReset').addEventListener('click', () => {
-        applyZoomTo(getViewportFitRatio());
+        toggleZoomView();
     });
 
     // Format changes display quality slider
@@ -4071,13 +4092,14 @@
         maskCanvas.height = originalHeight;
         const maskCtx = maskCanvas.getContext('2d');
         const highlight = maskCtx.createImageData(originalWidth, originalHeight);
+        // Draw the selected region in white so the overlay's difference blend reads like a complement/inversion.
         for (let i = 0; i < magicWandMask.length; i++) {
             if (magicWandMask[i]) {
                 const j = i * 4;
-                highlight.data[j] = 0;
-                highlight.data[j + 1] = 120;
-                highlight.data[j + 2] = 215;
-                highlight.data[j + 3] = 90;
+                highlight.data[j] = 255;
+                highlight.data[j + 1] = 255;
+                highlight.data[j + 2] = 255;
+                highlight.data[j + 3] = 205;
             }
         }
         maskCtx.putImageData(highlight, 0, 0);
@@ -4522,7 +4544,8 @@
     document.getElementById('ctxReset').addEventListener('click', (e) => {
         e.stopPropagation();
         contextMenu.style.display = 'none';
-        document.getElementById('btnReset').click();
+        applyZoomTo(getViewportFitRatio());
+        updateZoomIndicator();
     });
 
     function selectFullImageCropSelection() {
