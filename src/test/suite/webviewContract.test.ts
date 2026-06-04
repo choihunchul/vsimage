@@ -59,6 +59,8 @@ suite('Webview contracts', () => {
     test('keeps stable save and context-menu reset contracts', () => {
         assert.ok(editor.includes('saveExportLogic.commandForBlobType(type)'));
         assert.ok(editor.includes("document.getElementById('btnReset').click()"));
+        assert.ok(provider.includes('ctxMosaic'));
+        assert.ok(provider.includes('data-shortcut="X"'));
     });
 
     test('keeps core edit actions working if optional helper globals are missing', () => {
@@ -148,12 +150,10 @@ suite('Webview contracts', () => {
         assert.ok(styles.includes('display: none !important;'));
     });
 
-    test('uses a scissors cursor and move drag mode inside the marquee face', () => {
-        assert.ok(styles.includes('.canvas-workspace.marquee-select-active .cropper-face'));
-        assert.ok(styles.includes('cursor: url('));
-        assert.ok(editor.includes('bindMarqueeFaceHoverInteractions()'));
-        assert.ok(editor.includes("workspace.classList.toggle('marquee-select-active'"));
-        assert.ok(editor.includes("cropper.setDragMode('move')"));
+    test('makes marquee corner handles easier to grab', () => {
+        assert.ok(styles.includes('.canvas-workspace.crop-active .cropper-point'));
+        assert.ok(styles.includes('width: 14px;'));
+        assert.ok(styles.includes('height: 14px;'));
     });
 
     test('wires the marquee mosaic action through the webview', () => {
@@ -165,6 +165,9 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('ctx.putImageData(imageData, 0, 0);'));
         assert.ok(editor.includes('function applyMosaicToSelection()'));
         assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', applyMosaicToSelection);"));
+        assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
+        assert.ok(editor.includes('applyMosaicToSelection();'));
+        assert.ok(provider.includes('shortcuts.mosaicSelection'));
     });
 
     test('slows the sidebar collapse transition down a bit', () => {

@@ -667,6 +667,10 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <div class="context-menu-item" id="ctxFlipV">
                         <span data-i18n="context.flipV"></span>
                     </div>
+                    <div class="context-menu-item" id="ctxMosaic" data-shortcut="X">
+                        <span data-i18n="context.mosaic"></span>
+                        <span class="context-menu-shortcut"></span>
+                    </div>
                     <div class="context-menu-divider"></div>
                     <div class="context-menu-item" id="ctxSave" data-shortcut="mod+s">
                         <span data-i18n="context.save"></span>
@@ -761,6 +765,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="shortcut-row"><span class="shortcut-key">[ / ]</span><span class="shortcut-desc" data-i18n="shortcuts.marqueeResize"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">R / Shift + R</span><span class="shortcut-desc" data-i18n="shortcuts.rotate"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Enter</span><span class="shortcut-desc" data-i18n="shortcuts.applyCrop"></span></div>
+                        <div class="shortcut-row"><span class="shortcut-key">X</span><span class="shortcut-desc" data-i18n="shortcuts.mosaicSelection"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Del / Bksp</span><span class="shortcut-desc" data-i18n="shortcuts.eraseSelection"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">Esc</span><span class="shortcut-desc" data-i18n="shortcuts.cancel"></span></div>
                         <div class="shortcut-row"><span class="shortcut-key">I + Click</span><span class="shortcut-desc" data-i18n="shortcuts.pickColor"></span></div>

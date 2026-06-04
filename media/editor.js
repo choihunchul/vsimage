@@ -674,7 +674,6 @@
     let expandContainerFrame = null;
     let isSpacePressed = false;
     let isHandPressed = false;
-    let isMarqueeFaceHovered = false;
     let marqueeGestureState = null;
     let isZLoupeActive = false;
     let isZLoupeDragging = false;
@@ -712,10 +711,6 @@
         }
         if (isPanShortcutPressed() || isZLoupeActive || isEyedropperActive || isColorPickerMode || isMagicWandMode) {
             cropper.setDragMode('none');
-            return;
-        }
-        if (isMarqueeMode && isMarqueeFaceHovered && chkEnableCrop.checked && cropper.cropped) {
-            cropper.setDragMode('move');
             return;
         }
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
@@ -1104,33 +1099,6 @@
         updateCropPresetActiveButton();
     }
 
-    function syncMarqueeModeUI() {
-        if (workspace) {
-            workspace.classList.toggle('marquee-select-active', isMarqueeMode && chkEnableCrop.checked);
-        }
-    }
-
-    function bindMarqueeFaceHoverInteractions() {
-        const face = document.querySelector('.cropper-face');
-        if (!face || face.dataset.vsimageMarqueeHoverBound === 'true') {
-            return;
-        }
-        face.dataset.vsimageMarqueeHoverBound = 'true';
-        face.addEventListener('mouseenter', () => {
-            if (!cropper || !chkEnableCrop.checked || !cropper.cropped || !isMarqueeMode) {
-                return;
-            }
-            isMarqueeFaceHovered = true;
-            updateCropInteraction();
-        });
-        face.addEventListener('mouseleave', () => {
-            isMarqueeFaceHovered = false;
-            if (!marqueeGestureState) {
-                updateCropInteraction();
-            }
-        });
-    }
-
     function handleMarqueeCropStart(detail) {
         if (!detail || !detail.originalEvent || !cropper) {
             return;
@@ -1175,7 +1143,6 @@
 
     function handleMarqueeCropEnd() {
         marqueeGestureState = null;
-        updateCropInteraction();
     }
 
     function initMarqueeToFullImage() {
@@ -2553,7 +2520,6 @@
                         }
                     });
                     updateCropInteraction();
-                    bindMarqueeFaceHoverInteractions();
                     if (resizePanelLogic.shouldSyncResizePanelFromImage(chkEnableCrop.checked, cropper.cropped)) {
                         syncResizeInputsToOriginal();
                     } else {
@@ -2786,7 +2752,6 @@
         if (workspace) {
             workspace.classList.toggle('crop-active', isEnabled);
         }
-        syncMarqueeModeUI();
         presetButtons.forEach(btn => {
             btn.disabled = !isEnabled;
         });
@@ -2812,8 +2777,6 @@
                 // Highlight Free preset by default when crop is checked on
                 applyMarqueeShape();
                 isMarqueeMode = false;
-                isMarqueeFaceHovered = false;
-                syncMarqueeModeUI();
                 updateResizeInputsFromCrop();
             }
         } else {
@@ -2824,8 +2787,6 @@
             clearNaturalCropData();
             applyMarqueeShape();
             isMarqueeMode = false;
-            isMarqueeFaceHovered = false;
-            syncMarqueeModeUI();
         }
         syncCropPresetUI();
     });
@@ -2838,8 +2799,6 @@
         endMagicWandMode(false);
         endColorPickerMode();
         isMarqueeMode = false;
-        isMarqueeFaceHovered = false;
-        syncMarqueeModeUI();
 
         const turningOn = !chkEnableCrop.checked;
         chkEnableCrop.checked = turningOn;
@@ -2866,9 +2825,7 @@
         }
 
         isMarqueeMode = true;
-        isMarqueeFaceHovered = false;
         applyMarqueeShape();
-        syncMarqueeModeUI();
         focusCropKeyboardTarget();
         vscode.postMessage({
             command: 'show-toast',
@@ -2896,8 +2853,6 @@
 
             applyMarqueeShape();
             isMarqueeMode = false;
-            isMarqueeFaceHovered = false;
-            syncMarqueeModeUI();
             const ratio = parseFloat(btn.dataset.ratio);
             cropper.setAspectRatio(isNaN(ratio) ? NaN : ratio);
         });
@@ -4306,6 +4261,12 @@
         applyFlipAction('flipV');
     });
 
+    document.getElementById('ctxMosaic').addEventListener('click', (e) => {
+        e.stopPropagation();
+        contextMenu.style.display = 'none';
+        applyMosaicToSelection();
+    });
+
     document.getElementById('ctxSave').addEventListener('click', (e) => {
         e.stopPropagation();
         contextMenu.style.display = 'none';
@@ -4382,6 +4343,10 @@
         }
         if (shortcutAction === 'marquee') {
             toggleMarqueeModeWithKey();
+            return true;
+        }
+        if (shortcutAction === 'mosaic') {
+            applyMosaicToSelection();
             return true;
         }
         if (shortcutAction === 'magicWand') {
