@@ -33,12 +33,15 @@ body, html {
 
 /* ── Canvas workspace: CSS grid shell ──────────────────────────────────── */
 /* Layout: [corner][rulerH] / [rulerV][scrollable canvas]                    */
-:root { --ruler-size: 20px; }
+:root {
+    --ruler-size: 20px;
+    --ruler-v-width: 44px;
+}
 
 .canvas-workspace {
     flex: 1;
     display: grid;
-    grid-template-columns: var(--ruler-size) 1fr;
+    grid-template-columns: var(--ruler-v-width) 1fr;
     grid-template-rows:    var(--ruler-size) 1fr;
     overflow: hidden;
     min-height: 0;
@@ -105,6 +108,8 @@ body, html {
 .canvas-workspace:not(.crop-active) .cropper-point,
 .canvas-workspace:not(.crop-active) .cropper-dashed,
 .canvas-workspace:not(.crop-active) .cropper-center,
+.canvas-workspace:not(.crop-active) .cropper-drag-box,
+.canvas-workspace:not(.crop-active) .cropper-modal,
 .canvas-workspace:not(.crop-active) .cropper-face {
     display: none !important;
 }
@@ -123,6 +128,9 @@ body, html {
 
 .canvas-workspace.crop-active .cropper-point {
     cursor: pointer;
+    width: 14px;
+    height: 14px;
+    opacity: 0.9;
 }
 
 .tool-hint {
@@ -130,6 +138,40 @@ body, html {
     font-size: 0.72rem;
     line-height: 1.4;
     color: #858585;
+}
+
+.selection-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.selection-info-item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.selection-info-label {
+    font-size: 0.68rem;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #8a8a8a;
+}
+
+.selection-info-value {
+    margin-top: 4px;
+    font-size: 0.95rem;
+    line-height: 1.25;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+}
+
+.selection-info-value.is-empty {
+    color: #8f8f8f;
 }
 
 .magic-wand-overlay {
@@ -153,7 +195,7 @@ body, html {
 /* Toolbar overlay — pinned to bottom of canvas viewport */
 .canvas-toolbar-layer {
     position: absolute;
-    left: var(--ruler-size);
+    left: var(--ruler-v-width);
     right: 0;
     top: 0;
     bottom: 0;
@@ -206,17 +248,17 @@ body, html {
     border-color: rgba(77, 163, 224, 0.7);
 }
 
-.toolbar-drag-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.5em;
-    color: var(--btn-bg, #4da3e0);
-    font-weight: 800;
-    font-size: 0.92rem;
-    line-height: 1;
-    letter-spacing: 0;
-    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+.toolbar-drag-icon,
+.zoom-loupe-drag-icon {
+    width: 16px;
+    height: 16px;
+    color: #ffffff;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: 0 0 auto;
 }
 
 .tb-btn {
@@ -1193,7 +1235,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 .ruler-v {
     grid-column: 1;
     grid-row: 2;
-    width: var(--ruler-size);
+    width: var(--ruler-v-width);
     height: 100%;
     border-right: 1px solid #333;
 }

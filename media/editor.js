@@ -669,6 +669,7 @@
     const canvasScrollContent = document.getElementById('canvasScrollContent');
     const imageContainer = document.getElementById('imageContainer');
     const RULER_SIZE = 20; // px — must match CSS --ruler-size
+    const RULER_V_WIDTH = 44; // px — leaves room for rotated labels on the left ruler
     const CANVAS_PADDING = 0; // px — must match .canvas-scroll-content padding
     let expandingContainer = false;
     let expandContainerFrame = null;
@@ -1472,8 +1473,8 @@
             rulerH.width  = Math.round(cw * dpr);
             rulerH.height = Math.round(RULER_SIZE * dpr);
         }
-        if (rulerV.width !== Math.round(RULER_SIZE * dpr) || rulerV.height !== Math.round(ch * dpr)) {
-            rulerV.width  = Math.round(RULER_SIZE * dpr);
+        if (rulerV.width !== Math.round(RULER_V_WIDTH * dpr) || rulerV.height !== Math.round(ch * dpr)) {
+            rulerV.width  = Math.round(RULER_V_WIDTH * dpr);
             rulerV.height = Math.round(ch * dpr);
         }
 
@@ -1491,13 +1492,13 @@
 
         // Clear
         hCtx.fillStyle = BG; hCtx.fillRect(0, 0, cw, RULER_SIZE);
-        vCtx.fillStyle = BG; vCtx.fillRect(0, 0, RULER_SIZE, ch);
+        vCtx.fillStyle = BG; vCtx.fillRect(0, 0, RULER_V_WIDTH, ch);
 
         // Separator lines
         hCtx.strokeStyle = '#333'; hCtx.lineWidth = 1;
         hCtx.beginPath(); hCtx.moveTo(0, RULER_SIZE - 0.5); hCtx.lineTo(cw, RULER_SIZE - 0.5); hCtx.stroke();
         vCtx.strokeStyle = '#333'; vCtx.lineWidth = 1;
-        vCtx.beginPath(); vCtx.moveTo(RULER_SIZE - 0.5, 0); vCtx.lineTo(RULER_SIZE - 0.5, ch); vCtx.stroke();
+        vCtx.beginPath(); vCtx.moveTo(RULER_V_WIDTH - 0.5, 0); vCtx.lineTo(RULER_V_WIDTH - 0.5, ch); vCtx.stroke();
 
         // ── scale: natural image pixels per display pixel ─────────────────
         const scaleX = imgData.naturalWidth  / dispW;
@@ -1540,12 +1541,14 @@
             if (y < 0 || y > ch) continue;
             const isMajor = (Math.round(n / stepY) % 5 === 0);
             const tickW   = isMajor ? 9 : 5;
+            const tickRight = RULER_V_WIDTH;
+            const tickLeft = tickRight - tickW;
             vCtx.strokeStyle = TICK; vCtx.lineWidth = 1;
-            vCtx.beginPath(); vCtx.moveTo(RULER_SIZE - tickW, y); vCtx.lineTo(RULER_SIZE, y); vCtx.stroke();
+            vCtx.beginPath(); vCtx.moveTo(tickLeft, y); vCtx.lineTo(tickRight, y); vCtx.stroke();
             if (isMajor) {
                 vCtx.save();
                 vCtx.fillStyle = TEXT;
-                vCtx.translate(RULER_SIZE - tickW - 2, y);
+                vCtx.translate(tickLeft - 2, y);
                 vCtx.rotate(-Math.PI / 2);
                 vCtx.textAlign = 'center';
                 vCtx.fillText(String(Math.round(n)), 0, 0);
@@ -1566,7 +1569,7 @@
         vCtx.strokeStyle = IMGLINE; vCtx.lineWidth = 1.5;
         [imgTop, imgBottom].forEach(y => {
             if (y >= 0 && y <= ch) {
-                vCtx.beginPath(); vCtx.moveTo(0, y); vCtx.lineTo(RULER_SIZE, y); vCtx.stroke();
+                vCtx.beginPath(); vCtx.moveTo(0, y); vCtx.lineTo(RULER_V_WIDTH, y); vCtx.stroke();
             }
         });
     }

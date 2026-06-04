@@ -122,7 +122,8 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('startToolbarDrag'));
         assert.ok(editor.includes('moveToolbarDrag'));
         assert.ok(styles.includes('.canvas-toolbar-layer'));
-        assert.ok(styles.includes('left: var(--ruler-size);'));
+        assert.ok(styles.includes('--ruler-v-width: 44px;'));
+        assert.ok(styles.includes('left: var(--ruler-v-width);'));
         assert.ok(styles.includes('left: 50%;'));
         assert.ok(styles.includes('.toolbar-drag-handle'));
         assert.ok(styles.includes('border: 1px solid rgba(77, 163, 224, 0.45);'));
