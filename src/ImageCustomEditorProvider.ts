@@ -479,13 +479,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <!-- Workspace Area (grid: ruler-corner | rulerH / rulerV | scrollable canvas) -->
                     <div class="canvas-workspace" id="workspace" tabindex="-1" style="display: none; outline: none;">
                         <div class="tool-rail" id="toolRail" style="display: none;">
-                            <button type="button" class="tool-rail-btn active" id="btnToolSelect" data-tool="select" data-i18n-title="shortcuts.marqueeSelect">
+                            <button type="button" class="tool-rail-btn active" id="btnToolCursor" data-tool="cursor" data-i18n-title="toolbar.cursor">
                                 <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
                                     <rect x="4" y="4" width="12" height="12" rx="2"></rect>
                                     <path d="M14.5 14.5 20 20"></path>
                                     <path d="M17 20h3v-3"></path>
                                 </svg>
-                                <span class="tool-rail-label" data-i18n="shortcuts.marqueeSelect"></span>
+                                <span class="tool-rail-label" data-i18n="toolbar.cursor"></span>
                             </button>
                             <button type="button" class="tool-rail-btn" id="btnToolCrop" data-tool="crop" data-i18n-title="shortcuts.toggleCrop">
                                 <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -536,6 +536,26 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 </svg>
                                 <span class="tool-rail-label" data-i18n="shortcuts.pan"></span>
                             </button>
+                            <button type="button" class="tool-rail-btn tool-rail-secondary" id="btnRotateLeft" data-shortcut="shift+r" data-i18n-title="toolbar.rotateLeft">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M7 7V3L2 8l5 5V9c3.3 0 6 2.7 6 6 0 2.1-1.1 4-2.8 5.1l1.2 1.6C14.7 19.2 16 16.8 16 15c0-4.4-3.6-8-8-8z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="tool-rail-btn tool-rail-secondary" id="btnRotateRight" data-shortcut="R" data-i18n-title="toolbar.rotateRight">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M17 7V3l5 5-5 5V9c-3.3 0-6 2.7-6 6 0 2.1 1.1 4 2.8 5.1l-1.2 1.6C9.3 19.2 8 16.8 8 15c0-4.4 3.6-8 8-8z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="tool-rail-btn tool-rail-secondary" id="btnFlipH" data-i18n-title="toolbar.flipH">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M11 4H9v16h2V4zm4 0h-2v16h2V4zM6 6H4v12h2V6zm14 0h-2v12h2V6z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="tool-rail-btn tool-rail-secondary" id="btnFlipV" data-i18n-title="toolbar.flipV">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M4 11v2h16v-2H4zm0-4v2h16V7H4zm0 8v2h16v-2H4z"></path>
+                                </svg>
+                            </button>
                         </div>
                         <div class="ruler-corner" id="rulerCorner"></div>
                         <canvas class="ruler ruler-h" id="rulerH"></canvas>
@@ -565,16 +585,6 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                         <path d="M8 1v4M8 11v4M1 8h4M11 8h4M6.5 2.5 8 1l1.5 1.5M9.5 14.5 8 13l-1.5 1.5M2.5 6.5 1 8l1.5 1.5M14.5 9.5 13 8l1.5-1.5" />
                                     </svg>
                                 </button>
-                                <button class="tb-btn" id="btnZoomOut" data-shortcut="-" data-i18n-title="toolbar.zoomOut">-<span class="ui-shortcut-badge"></span></button>
-                                <span class="zoom-indicator" id="lblZoomPercent">--%</span>
-                                <button class="tb-btn" id="btnZoomIn" data-shortcut="+" data-i18n-title="toolbar.zoomIn">+<span class="ui-shortcut-badge"></span></button>
-                                <div class="tb-divider"></div>
-                                <button class="tb-btn" id="btnRotateLeft" data-shortcut="shift+r" data-i18n-title="toolbar.rotateLeft">⟲<span class="ui-shortcut-badge"></span></button>
-                                <button class="tb-btn" id="btnRotateRight" data-shortcut="R" data-i18n-title="toolbar.rotateRight">⟳<span class="ui-shortcut-badge"></span></button>
-                                <button class="tb-btn" id="btnFlipH" data-i18n-title="toolbar.flipH">↔</button>
-                                <button class="tb-btn" id="btnFlipV" data-i18n-title="toolbar.flipV">↕</button>
-                                <div class="tb-divider"></div>
-                                <button class="tb-btn" id="btnReset" data-shortcut="mod+0" data-i18n-title="toolbar.reset"><span id="lblResetText" data-i18n="toolbar.reset"></span><span class="ui-shortcut-badge"></span></button>
                                 <div class="tb-divider"></div>
                                 <button class="tb-btn" id="btnMagicWand" data-shortcut="W" data-i18n-title="toolbar.magicWand">🪄<span class="ui-shortcut-badge"></span></button>
                             </div>
@@ -595,6 +605,12 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             <div style="font-size: 0.8rem; line-height: 1.5; color: #aaa;">
                                 <div><span data-i18n="sidebar.dimensions"></span> <span id="lblDimensions">0 × 0</span> px</div>
                                 <div><span data-i18n="sidebar.fileSize"></span> <span id="lblFileSize">—</span></div>
+                            </div>
+                            <div class="properties-zoom-row">
+                                <button class="tb-btn" id="btnZoomOut" data-shortcut="-" data-i18n-title="toolbar.zoomOut">-<span class="ui-shortcut-badge"></span></button>
+                                <span class="zoom-indicator" id="lblZoomPercent">--%</span>
+                                <button class="tb-btn" id="btnZoomIn" data-shortcut="+" data-i18n-title="toolbar.zoomIn">+<span class="ui-shortcut-badge"></span></button>
+                                <button class="tb-btn" id="btnReset" data-shortcut="mod+0" data-i18n-title="toolbar.reset"><span id="lblResetText" data-i18n="toolbar.reset"></span><span class="ui-shortcut-badge"></span></button>
                             </div>
                         </div>
 
@@ -631,7 +647,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
                         <div class="section-card section-card-tool-options" id="toolOptionsSection">
                             <div class="section-title" data-i18n="sidebar.toolOptions">Tool Options</div>
-                            <div class="tool-options-panel active" id="toolOptionsSelect">
+                            <div class="tool-options-panel active" id="toolOptionsCursor">
                                 <p class="tool-options-note" data-i18n="shortcuts.marqueeSelect"></p>
                             </div>
                             <div class="tool-options-panel" id="toolOptionsCrop">

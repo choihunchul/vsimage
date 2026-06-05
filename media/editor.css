@@ -227,38 +227,38 @@ body, html {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 10px 8px;
+    gap: 7px;
+    padding: 10px 8px 12px;
     box-sizing: border-box;
-    background: linear-gradient(180deg, rgba(24, 24, 24, 0.98), rgba(18, 18, 18, 0.98));
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(23, 23, 23, 0.99), rgba(16, 16, 16, 0.99));
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
     z-index: 3;
 }
 
 .tool-rail-btn {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 11px;
-    background: rgba(42, 42, 42, 0.92);
+    border-radius: 10px;
+    background: rgba(38, 38, 38, 0.92);
     color: #d6d6d6;
     cursor: pointer;
-    transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease, color 0.12s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .tool-rail-btn:hover {
-    background: rgba(58, 58, 58, 0.96);
-    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(55, 55, 55, 0.96);
+    border-color: rgba(255, 255, 255, 0.16);
 }
 
 .tool-rail-btn.active {
-    background: #f06c2f;
+    background: linear-gradient(180deg, rgba(61, 136, 255, 0.96), rgba(38, 107, 219, 0.96));
     color: #ffffff;
-    border-color: rgba(240, 108, 47, 0.95);
+    border-color: rgba(120, 177, 255, 0.95);
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
@@ -267,14 +267,14 @@ body, html {
 }
 
 .tool-rail-icon {
-    width: 18px;
-    height: 18px;
+    width: 17px;
+    height: 17px;
     display: block;
     stroke: currentColor;
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-width: 1.8;
+    stroke-width: 1.75;
 }
 
 .tool-rail-icon-fill {
@@ -314,6 +314,38 @@ body, html {
 .tool-options-note {
     margin: 0;
     color: #b7b7b7;
+}
+
+.tool-rail-secondary {
+    width: 34px;
+    height: 34px;
+    margin-top: 4px;
+    background: rgba(32, 32, 32, 0.94);
+    opacity: 0.92;
+}
+
+.tool-rail-secondary:hover {
+    background: rgba(44, 44, 44, 0.98);
+}
+
+.tool-rail-secondary.active {
+    background: linear-gradient(180deg, rgba(61, 136, 255, 0.96), rgba(38, 107, 219, 0.96));
+}
+
+.properties-zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.properties-zoom-row .tb-btn {
+    min-width: 38px;
+}
+
+.properties-zoom-row #btnReset {
+    min-width: 104px;
 }
 
 /* Toolbar overlay — pinned to bottom of canvas viewport */

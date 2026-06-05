@@ -262,7 +262,7 @@
         }
     }
     const toolRailLogic = globalThis.VsimageToolRailLogic || {
-        DEFAULT_ACTIVE_TOOL: 'select',
+        DEFAULT_ACTIVE_TOOL: 'cursor',
         resolveToolForShortcutAction: (_action, currentTool) => currentTool,
         resolveToolAfterApply: (tool) => tool,
         shouldEnableCropForTool: (tool) => tool === 'crop',
@@ -274,7 +274,7 @@
     const toolRail = document.getElementById('toolRail');
     const toolButtons = Array.from(document.querySelectorAll('[data-tool]'));
     const toolOptionPanels = {
-        select: document.getElementById('toolOptionsSelect'),
+        cursor: document.getElementById('toolOptionsCursor'),
         crop: document.getElementById('toolOptionsCrop'),
         resize: document.getElementById('toolOptionsResize'),
         mosaic: document.getElementById('toolOptionsMosaic'),
@@ -318,7 +318,8 @@
     let historyStack = [];
     let sidebarAutoCollapseState = { enabled: false, collapsed: false };
     let sidebarAutoCollapseTimer = null;
-    let activeTool = toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select';
+    let activeTool = toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor';
+    let suppressCropCheckboxToolSync = false;
     let initialImageSrc = '';
     let isEyedropperActive = false;
     let isColorPickerMode = false;
@@ -682,7 +683,7 @@
         initialImageSrc = src;
         currentFileSizeBytes = parseFileSizeBytes(fileSizeBytes);
         setFileSizeLabel(currentFileSizeBytes);
-        setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select');
+        setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor');
         initEditor(src, { preserveInitialSrc: true });
         vscode.postMessage({ command: 'show-toast', text: t('toast.reverted') });
     }
@@ -2463,7 +2464,7 @@
     }
 
     function startEditorMode() {
-        setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select');
+        setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor');
         chkEnableCrop.checked = false;
         syncCropPresetUI();
         if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
@@ -2542,7 +2543,7 @@
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
             showEditorChrome();
-            setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select');
+            setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor');
             initEditor(event.target.result);
             if (isDocumentEditor) {
                 notifyDocumentChanged('edit.edit');
@@ -3014,7 +3015,10 @@
             isMarqueeMode = false;
         }
         syncCropPresetUI();
-        setActiveTool(chkEnableCrop.checked ? (isMarqueeMode ? 'select' : 'crop') : 'select', {
+        if (suppressCropCheckboxToolSync) {
+            return;
+        }
+        setActiveTool(chkEnableCrop.checked ? (isMarqueeMode ? 'cursor' : 'crop') : 'cursor', {
             setMarqueeMode: isMarqueeMode && chkEnableCrop.checked
         });
     });
@@ -3054,7 +3058,7 @@
         }
 
         applyMarqueeShape();
-        setActiveTool('select', { setMarqueeMode: true });
+        setActiveTool('cursor', { setMarqueeMode: true });
         focusCropKeyboardTarget();
         vscode.postMessage({
             command: 'show-toast',
@@ -3191,13 +3195,18 @@
     }
 
     function setActiveTool(nextTool, options = {}) {
-        const resolvedTool = nextTool || toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select';
+        const resolvedTool = nextTool || toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor';
         activeTool = resolvedTool;
         syncToolRailButtons();
         syncToolOptionsVisibility();
 
         if (toolRailLogic.shouldEnableCropForTool(activeTool) && !chkEnableCrop.checked) {
             ensureCropModeEnabled();
+        } else if (!toolRailLogic.shouldEnableCropForTool(activeTool) && chkEnableCrop.checked) {
+            suppressCropCheckboxToolSync = true;
+            chkEnableCrop.checked = false;
+            chkEnableCrop.dispatchEvent(new Event('change'));
+            suppressCropCheckboxToolSync = false;
         }
 
         if (options.setMarqueeMode === true) {
@@ -3435,13 +3444,13 @@
 
     toolButtons.forEach((btn) => {
         btn.addEventListener('click', () => {
-            const tool = btn.dataset.tool || 'select';
+            const tool = btn.dataset.tool || 'cursor';
             if (tool === 'crop') {
                 setActiveTool('crop');
                 return;
             }
-            if (tool === 'select') {
-                setActiveTool('select');
+            if (tool === 'cursor') {
+                setActiveTool('cursor');
                 return;
             }
             if (tool === 'resize') {

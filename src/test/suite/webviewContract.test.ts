@@ -105,20 +105,46 @@ suite('Webview contracts', () => {
 
     test('replaces static resize and crop cards with a tool rail and shared tool options', () => {
         assert.ok(provider.includes('id="toolRail"'));
-        assert.ok(provider.includes('id="btnToolSelect"'));
+        assert.ok(provider.includes('id="btnToolCursor"'));
         assert.ok(provider.includes('id="btnToolCrop"'));
         assert.ok(provider.includes('id="btnToolResize"'));
         assert.ok(provider.includes('id="btnToolMosaic"'));
         assert.ok(provider.includes('id="btnToolMove"'));
+        assert.ok(provider.includes('id="btnRotateLeft"'));
+        assert.ok(provider.includes('id="btnRotateRight"'));
+        assert.ok(provider.includes('id="btnFlipH"'));
+        assert.ok(provider.includes('id="btnFlipV"'));
         assert.ok(provider.includes('id="toolOptionsSection"'));
+        assert.ok(provider.includes('id="toolOptionsCursor"'));
         assert.ok(provider.includes('id="toolOptionsCrop"'));
         assert.ok(provider.includes('id="toolOptionsResize"'));
         assert.ok(provider.includes('id="toolOptionsMosaic"'));
         assert.ok(provider.includes('id="toolOptionsMove"'));
+        assert.ok(provider.includes('properties-zoom-row'));
+        assert.ok(provider.includes('toolbar.cursor'));
         assert.ok(styles.includes('.tool-rail'));
         assert.ok(styles.includes('.tool-rail-btn.active'));
+        assert.ok(styles.includes('.tool-rail-secondary'));
+        assert.ok(styles.includes('.properties-zoom-row'));
         assert.ok(styles.includes('.tool-options-panel.active'));
-        assert.ok(editor.includes('setActiveTool('));
+    });
+
+    test('wires active tool state through the webview runtime', () => {
+        assert.ok(editor.includes("let activeTool = toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor'"));
+        assert.ok(!editor.includes("select: document.getElementById('toolOptionsSelect')"));
+        assert.ok(editor.includes("cursor: document.getElementById('toolOptionsCursor')"));
+        assert.ok(editor.includes("setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor')"));
+        assert.ok(editor.includes("setActiveTool('cursor')"));
+        assert.ok(editor.includes("toolButtons.forEach((btn) => {"));
+        assert.ok(editor.includes("const tool = btn.dataset.tool || 'cursor';"));
+        assert.ok(editor.includes("btnApplyCrop.addEventListener('click', () => {"));
+        assert.ok(editor.includes('btnApplyCrop.click();'));
+        assert.ok(editor.includes("activeTool = toolRailLogic.resolveToolAfterApply(activeTool, 'crop');"));
+        assert.ok(editor.includes('setActiveTool(activeTool);'));
+        assert.ok(editor.includes('let suppressCropCheckboxToolSync = false;'));
+        assert.ok(editor.includes('if (suppressCropCheckboxToolSync) {'));
+        assert.ok(editor.includes("chkEnableCrop.dispatchEvent(new Event('change'));"));
+        assert.ok(editor.includes('toolRailLogic.shouldBlockMarqueeCreation(activeTool)'));
     });
 
     test('shows a live selection panel for marquee size and pointer coordinates', () => {
@@ -172,19 +198,12 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('sidebar.autoCollapse'));
     });
 
-    test('lets the bottom zoom toolbar drag from its plus-arrow handle', () => {
-        assert.ok(provider.includes('toolbarDragHandle'));
-        assert.ok(provider.includes('toolbar-drag-icon'));
-        assert.ok(editor.includes('startToolbarDrag'));
-        assert.ok(editor.includes('moveToolbarDrag'));
-        assert.ok(styles.includes('.canvas-toolbar-layer'));
-        assert.ok(styles.includes('--ruler-v-width: 44px;'));
-        assert.ok(styles.includes('left: calc(var(--tool-rail-width) + var(--ruler-v-width));'));
-        assert.ok(styles.includes('left: 50%;'));
-        assert.ok(styles.includes('.toolbar-drag-handle'));
-        assert.ok(styles.includes('border: 1px solid rgba(77, 163, 224, 0.45);'));
-        assert.ok(styles.includes('.toolbar-drag-icon'));
-        assert.ok(styles.includes('color: #ffffff;'));
+    test('moves zoom controls into the properties panel', () => {
+        assert.ok(provider.includes('properties-zoom-row'));
+        assert.ok(provider.includes('btnZoomOut'));
+        assert.ok(provider.includes('lblZoomPercent'));
+        assert.ok(provider.includes('btnZoomIn'));
+        assert.ok(provider.includes('btnReset'));
     });
 
     test('dismisses shortcut hints when the canvas image is clicked', () => {
