@@ -29,9 +29,10 @@ suite('Clipboard logic', () => {
     });
 
     test('defaults to selection copy only when a crop selection exists', () => {
-        assert.strictEqual(logic.resolveSelectionOnly(true, 'full'), false);
+        assert.strictEqual(logic.resolveSelectionOnly(true, 'full'), true);
         assert.strictEqual(logic.resolveSelectionOnly(true, 'selection'), true);
         assert.strictEqual(logic.resolveSelectionOnly(true, null), true);
         assert.strictEqual(logic.resolveSelectionOnly(false, 'selection'), false);
+        assert.strictEqual(logic.resolveSelectionOnly(false, 'full'), false);
     });
 });

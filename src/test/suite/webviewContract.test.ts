@@ -205,6 +205,17 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("e.target.closest('.cropper-face')"));
     });
 
+    test('erases the marquee immediately before enabling fill preview mode', () => {
+        assert.ok(editor.includes("const eraseBounds = cropper.getData(true);"));
+        assert.ok(editor.includes("pushHistorySnapshot('edit.eraseSelection');"));
+        assert.ok(editor.includes('ctx.clearRect(eraseBounds.x, eraseBounds.y, eraseBounds.width, eraseBounds.height);'));
+        assert.ok(editor.includes('restoreCropData: eraseBounds'));
+        assert.ok(editor.includes('keepCropEnabled: true'));
+        assert.ok(editor.includes('startEyedropper: true'));
+        assert.ok(editor.includes('beginEyedropperForSelection(clampedRestoreCropData);'));
+        assert.ok(!editor.includes("text: t('toast.eyedropperActive')"));
+    });
+
     test('turns image drags into marquee activation when crop is off and no selection exists', () => {
         assert.ok(editor.includes('shouldAutoEnableMarqueeOnDrag'));
         assert.ok(editor.includes("workspace.addEventListener('mousedown'"));

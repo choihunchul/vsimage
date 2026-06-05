@@ -2641,6 +2641,9 @@
         const preserveZoomRatio = options && options.preserveZoomRatio;
         const resizePanelScalePercent = options && options.resizePanelScalePercent;
         const preserveSharpenAdjust = options && options.preserveSharpenAdjust;
+        const restoreCropData = options && options.restoreCropData;
+        const keepCropEnabled = options && options.keepCropEnabled;
+        const startEyedropper = options && options.startEyedropper;
         hideMosaicModal();
         if (!preserveSharpenAdjust) {
             resetSharpenAdjust();
@@ -2690,6 +2693,22 @@
                 cropBoxResizable: true,
                 toggleDragModeOnDblclick: false,
                 ready() {
+                    let clampedRestoreCropData = null;
+                    if (keepCropEnabled && restoreCropData) {
+                        chkEnableCrop.checked = true;
+                        syncCropPresetUI();
+                        cropper.crop();
+                        clampedRestoreCropData = clampCropBox(
+                            restoreCropData.x,
+                            restoreCropData.y,
+                            restoreCropData.width,
+                            restoreCropData.height
+                        );
+                        cropper.setData(clampedRestoreCropData);
+                        updateResizeInputsFromCrop();
+                        updateSelectionPanelFromCrop();
+                        cacheNaturalCropData();
+                    }
                     if (canvasScrollArea) {
                         canvasScrollArea.scrollLeft = 0;
                         canvasScrollArea.scrollTop = 0;
@@ -2716,6 +2735,9 @@
                         syncResizeInputsToOriginal();
                     } else {
                         updateResizeInputsFromCrop();
+                    }
+                    if (startEyedropper && clampedRestoreCropData) {
+                        beginEyedropperForSelection(clampedRestoreCropData);
                     }
                     focusCropKeyboardTarget();
                 },
@@ -4301,6 +4323,37 @@
         }
     }
 
+    function beginEyedropperForSelection(bounds) {
+        if (!cropper || !bounds) {
+            return;
+        }
+
+        isEyedropperActive = true;
+        endColorPickerMode();
+        eraseTargetBounds = bounds;
+
+        eyedropperCanvas = document.createElement('canvas');
+        eyedropperCanvas.width = originalWidth;
+        eyedropperCanvas.height = originalHeight;
+        eyedropperCtx = eyedropperCanvas.getContext('2d');
+        eyedropperCtx.drawImage(imageEl, 0, 0);
+
+        lastSampledColor = null;
+
+        if (eyedropperTooltip) {
+            eyedropperTooltip.style.display = 'none';
+            eyedropperTooltip.style.left = '-1000px';
+            eyedropperTooltip.style.top = '-1000px';
+        }
+
+        const face = document.querySelector('.cropper-face');
+        if (face) {
+            face.style.backgroundColor = 'transparent';
+        }
+
+        workspace.classList.add('eyedropper-active');
+    }
+
     // ── Magic Wand (W key) ───────────────────────────────────────────────
 
     function invalidateMagicWandCanvas() {
@@ -4602,33 +4655,26 @@
 
         clearMagicWandMask();
         endMagicWandMode(false);
+        endEyedropper();
 
-        const data = cropper.getData();
-        isEyedropperActive = true;
-        endColorPickerMode();
-        eraseTargetBounds = data;
-        
-        // Cache offscreen representation of the image
-        eyedropperCanvas = document.createElement('canvas');
-        eyedropperCanvas.width = originalWidth;
-        eyedropperCanvas.height = originalHeight;
-        eyedropperCtx = eyedropperCanvas.getContext('2d');
-        eyedropperCtx.drawImage(imageEl, 0, 0);
+        const eraseBounds = cropper.getData(true);
+        pushHistorySnapshot('edit.eraseSelection');
 
-        lastSampledColor = null;
+        const canvas = document.createElement('canvas');
+        canvas.width = originalWidth;
+        canvas.height = originalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imageEl, 0, 0);
+        ctx.clearRect(eraseBounds.x, eraseBounds.y, eraseBounds.width, eraseBounds.height);
 
-        if (eyedropperTooltip) {
-            eyedropperTooltip.style.display = 'block';
-            eyedropperTooltip.style.left = '-1000px'; // initially position offscreen to avoid jump
-            eyedropperTooltip.style.top = '-1000px';
-        }
-
-        // Set visual cursor classes
-        workspace.classList.add('eyedropper-active');
-        vscode.postMessage({ 
-            command: 'show-toast', 
-            text: t('toast.eyedropperActive')
+        const newSrc = canvas.toDataURL();
+        initEditor(newSrc, {
+            restoreCropData: eraseBounds,
+            keepCropEnabled: true,
+            startEyedropper: true
         });
+        notifyDocumentChanged('edit.eraseSelection');
+        vscode.postMessage({ command: 'show-toast', text: t('toast.selectionErased') });
     }
 
     workspace.addEventListener('mousemove', (e) => {
@@ -4694,6 +4740,7 @@
 
         // Position tooltip to follow the cursor (translate offset slightly)
         if (eyedropperTooltip) {
+            eyedropperTooltip.style.display = 'block';
             eyedropperTooltip.style.left = `${e.clientX + 12}px`;
             eyedropperTooltip.style.top = `${e.clientY + 12}px`;
         }
@@ -5030,30 +5077,7 @@
                 return;
             }
             if (isEyedropperActive && eraseTargetBounds) {
-                pushHistorySnapshot('edit.eraseSelection');
-
-                const canvas = document.createElement('canvas');
-                canvas.width = originalWidth;
-                canvas.height = originalHeight;
-                const ctx = canvas.getContext('2d');
-
-                // Draw current image
-                ctx.drawImage(imageEl, 0, 0);
-
-                // Erase target marquee selection to transparent
-                ctx.clearRect(eraseTargetBounds.x, eraseTargetBounds.y, eraseTargetBounds.width, eraseTargetBounds.height);
-
-                const newSrc = canvas.toDataURL();
-                initEditor(newSrc);
-                notifyDocumentChanged('edit.eraseSelection');
-
                 endEyedropper();
-
-                // Reset crop mode checkbox
-                chkEnableCrop.checked = false;
-                syncCropPresetUI();
-
-                vscode.postMessage({ command: 'show-toast', text: t('toast.selectionErased') });
                 return;
             }
             if (cropper) {

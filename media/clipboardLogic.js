@@ -21,7 +21,10 @@ function resolveCopyQuality(value, fallback) {
 }
 
 function resolveSelectionOnly(hasSelection, savedScope) {
-    return Boolean(hasSelection && savedScope !== 'full');
+    if (hasSelection) {
+        return true;
+    }
+    return false;
 }
 
 const api = { shouldShowQuality, resolveCopyFormat, resolveCopyQuality, resolveSelectionOnly };
