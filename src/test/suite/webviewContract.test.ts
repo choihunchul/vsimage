@@ -69,7 +69,9 @@ suite('Webview contracts', () => {
     });
 
     test('keeps stable save and context-menu reset contracts', () => {
-        assert.ok(editor.includes('saveExportLogic.commandForBlobType(type)'));
+        assert.ok(editor.includes("vscode.postMessage(start.immediateMessage);"));
+        assert.ok(editor.includes("window.editorApi.getCanvasBlob((blob) => {"));
+        assert.ok(provider.includes("webview.postMessage({ command: 'request-image-data', requestId, mimeType });"));
         assert.ok(editor.includes("applyZoomTo(getViewportFitRatio())"));
         assert.ok(provider.includes('ctxMosaic'));
         assert.ok(provider.includes('data-shortcut="X"'));

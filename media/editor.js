@@ -662,7 +662,7 @@
         }
     }
 
-    function respondWithImageData(requestId) {
+    function respondWithImageData(requestId, mimeType) {
         if (!window.editorApi || !window.editorApi.getCanvasBlob) {
             vscode.postMessage({ command: 'image-data-response', requestId, arrayBuffer: null, mimeType: 'image/png' });
             return;
@@ -684,7 +684,7 @@
                 });
             };
             reader.readAsArrayBuffer(blob);
-        });
+        }, { format: mimeType });
     }
 
     function revertUntitledEditor() {
@@ -734,7 +734,7 @@
         const message = event.data;
         switch (message.command) {
             case 'request-image-data':
-                respondWithImageData(message.requestId);
+                respondWithImageData(message.requestId, message.mimeType);
                 break;
             case 'revert-document':
                 revertToSource(message.src, message.fileSizeBytes);
@@ -5156,20 +5156,6 @@
         if (start.immediateMessage) {
             vscode.postMessage(start.immediateMessage);
             return;
-        }
-        if (start.needsBlob && window.editorApi && window.editorApi.getCanvasBlob) {
-            window.editorApi.getCanvasBlob((blob) => {
-                if (!blob) return;
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    vscode.postMessage({
-                        command: saveExportLogic.commandForBlobType(type),
-                        arrayBuffer: reader.result,
-                        mimeType: blob.type
-                    });
-                };
-                reader.readAsArrayBuffer(blob);
-            });
         }
     }
 

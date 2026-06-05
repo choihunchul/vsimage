@@ -153,10 +153,10 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             switch (message.command) {
                 case 'save-image':
                 case 'save-document':
-                    await this.saveDocumentFromWebview(document, webviewPanel.webview);
+                    await this.saveDocumentFromWebview(document);
                     return;
                 case 'export-image':
-                    await this.exportImage(message.arrayBuffer, message.mimeType);
+                    await this.exportImage(webviewPanel.webview);
                     return;
                 case 'document-changed':
                     this.notifyDocumentChanged(document, message.label);
@@ -189,7 +189,11 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             return;
         }
 
-        const { buffer } = await this.requestImageData(panel.webview, cancellation);
+        const { buffer } = await this.requestImageData(
+            panel.webview,
+            cancellation,
+            this.getDocumentMimeType(document)
+        );
         await vscode.workspace.fs.writeFile(document.uri, buffer);
         this.markDocumentSaved(document, panel, buffer.byteLength);
     }
@@ -206,7 +210,11 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             return;
         }
 
-        const { buffer } = await this.requestImageData(panel.webview, cancellation);
+        const { buffer } = await this.requestImageData(
+            panel.webview,
+            cancellation,
+            this.getPreferredMimeType(destination, this.getDocumentMimeType(document))
+        );
         await vscode.workspace.fs.writeFile(destination, buffer);
         this.markDocumentSaved(document, panel, buffer.byteLength);
     }
@@ -247,7 +255,11 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
         if (panel) {
             try {
-                const { buffer } = await this.requestImageData(panel.webview, cancellation);
+                const { buffer } = await this.requestImageData(
+                    panel.webview,
+                    cancellation,
+                    this.getPreferredMimeType(undefined, this.getDocumentMimeType(document))
+                );
                 await vscode.workspace.fs.writeFile(backupUri, buffer);
             } catch {
                 await vscode.workspace.fs.writeFile(backupUri, new Uint8Array());
@@ -290,9 +302,31 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         targetPanel?.webview.postMessage({ command: 'document-saved', fileSizeBytes });
     }
 
+    private getDocumentMimeType(document: vscode.CustomDocument): string {
+        return this.isUntitledDocument(document)
+            ? 'image/png'
+            : this.getPreferredMimeType(document.uri, 'image/png');
+    }
+
+    private getPreferredMimeType(uri: vscode.Uri | undefined, fallbackMimeType: string): string {
+        const lowerPath = uri?.fsPath?.toLowerCase?.() ?? '';
+        switch (path.extname(lowerPath)) {
+            case '.png':
+                return 'image/png';
+            case '.jpg':
+            case '.jpeg':
+                return 'image/jpeg';
+            case '.webp':
+                return 'image/webp';
+            case '.gif':
+                return 'image/gif';
+            default:
+                return fallbackMimeType;
+        }
+    }
+
     private async saveDocumentFromWebview(
-        document: vscode.CustomDocument,
-        webview: vscode.Webview
+        document: vscode.CustomDocument
     ): Promise<void> {
         try {
             const saved = await vscode.workspace.save(document.uri);
@@ -306,7 +340,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
     private requestImageData(
         webview: vscode.Webview,
-        cancellation: vscode.CancellationToken
+        cancellation: vscode.CancellationToken,
+        mimeType = 'image/png'
     ): Promise<ImageDataResponse> {
         return new Promise((resolve, reject) => {
             const requestId = ++this.nextRequestId;
@@ -328,7 +363,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 }
             });
 
-            webview.postMessage({ command: 'request-image-data', requestId });
+            webview.postMessage({ command: 'request-image-data', requestId, mimeType });
         });
     }
 
@@ -364,13 +399,25 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         });
     }
 
-    private async exportImage(buffer: ArrayBuffer, mimeType: string) {
+    private async exportImage(webview: vscode.Webview) {
         const fileUri = await this.promptImageSaveLocation();
-        if (fileUri) {
-            await vscode.workspace.fs.writeFile(fileUri, new Uint8Array(buffer));
+        if (!fileUri) {
+            return;
+        }
+
+        const cancellation = new vscode.CancellationTokenSource();
+        try {
+            const { buffer } = await this.requestImageData(
+                webview,
+                cancellation.token,
+                this.getPreferredMimeType(fileUri, 'image/png')
+            );
+            await vscode.workspace.fs.writeFile(fileUri, buffer);
             vscode.window.showInformationMessage(
                 translate(this.packageNls(), 'toast.exported', { filename: path.basename(fileUri.fsPath) })
             );
+        } finally {
+            cancellation.dispose();
         }
     }
 
