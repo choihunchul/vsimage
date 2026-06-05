@@ -11,30 +11,24 @@ const logic = require(path.join(__dirname, '../../../../media/toolRailLogic.js')
 };
 
 suite('Tool rail logic', () => {
-    test('defaults to select on image load', () => {
-        assert.strictEqual(logic.DEFAULT_ACTIVE_TOOL, 'select');
+    test('defaults to cursor and resolves shortcut actions to the expected tools', () => {
+        assert.strictEqual(logic.DEFAULT_ACTIVE_TOOL, 'cursor');
+        assert.strictEqual(logic.resolveToolForShortcutAction('crop', 'cursor'), 'crop');
+        assert.strictEqual(logic.resolveToolForShortcutAction('marquee', 'crop'), 'cursor');
+        assert.strictEqual(logic.resolveToolForShortcutAction('mosaic', 'cursor'), 'mosaic');
+        assert.strictEqual(logic.resolveToolForShortcutAction('move', 'cursor'), 'move');
     });
 
-    test('returns to select after crop apply but keeps resize and mosaic active', () => {
-        assert.strictEqual(logic.resolveToolAfterApply('crop', 'crop'), 'select');
+    test('resolves the active tool after apply based on the action kind', () => {
+        assert.strictEqual(logic.resolveToolAfterApply('crop', 'crop'), 'cursor');
         assert.strictEqual(logic.resolveToolAfterApply('resize', 'resize'), 'resize');
         assert.strictEqual(logic.resolveToolAfterApply('mosaic', 'mosaic'), 'mosaic');
     });
 
-    test('maps existing shortcuts onto the matching tools', () => {
-        assert.strictEqual(logic.resolveToolForShortcutAction('crop', 'select'), 'crop');
-        assert.strictEqual(logic.resolveToolForShortcutAction('marquee', 'crop'), 'select');
-        assert.strictEqual(logic.resolveToolForShortcutAction('mosaic', 'select'), 'mosaic');
-        assert.strictEqual(logic.resolveToolForShortcutAction('move', 'select'), 'move');
-    });
-
-    test('enables crop only while crop tool is active', () => {
+    test('toggles crop and marquee gating from the active tool', () => {
         assert.strictEqual(logic.shouldEnableCropForTool('crop'), true);
-        assert.strictEqual(logic.shouldEnableCropForTool('resize'), false);
-    });
-
-    test('blocks marquee creation only while move tool is active', () => {
+        assert.strictEqual(logic.shouldEnableCropForTool('cursor'), false);
         assert.strictEqual(logic.shouldBlockMarqueeCreation('move'), true);
-        assert.strictEqual(logic.shouldBlockMarqueeCreation('select'), false);
+        assert.strictEqual(logic.shouldBlockMarqueeCreation('cursor'), false);
     });
 });
