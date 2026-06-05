@@ -26,6 +26,7 @@
   "sidebar.history": "🕘 히스토리",
   "sidebar.historyHint": "스냅샷을 클릭하면 해당 상태로 돌아갑니다.",
   "history.current": "현재",
+  "sidebar.toolOptions": "도구 옵션",
   "sidebar.cropPresets": "✂️ 자르기 프리셋",
   "sidebar.enableCrop": "사용",
   "sidebar.cropFree": "자유",

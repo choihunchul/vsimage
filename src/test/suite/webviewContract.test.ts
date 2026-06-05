@@ -34,7 +34,8 @@ suite('Webview contracts', () => {
             'historyLogicUri',
             'transformLogicUri',
             'loupeLogicUri',
-            'sidebarAutoCollapseLogicUri'
+            'sidebarAutoCollapseLogicUri',
+            'toolRailLogicUri'
         ].forEach(uri => {
             const scriptIndex = provider.indexOf(`<script src="\${${uri}}"></script>`);
             assert.ok(scriptIndex >= 0, `${uri} script tag is missing`);
@@ -90,19 +91,34 @@ suite('Webview contracts', () => {
 
     test('keeps properties and save sticky while placing history near the top', () => {
         const propertiesIndex = provider.indexOf('section-card-properties');
-        const resizeIndex = provider.indexOf('sidebar.resize');
         const historyIndex = provider.indexOf('section-card-history');
         const saveIndex = provider.indexOf('section-card-save');
 
         assert.ok(provider.includes('sidebar.fileSize'));
         assert.ok(provider.includes('btnSidebarAutoCollapse'));
         assert.ok(propertiesIndex >= 0);
-        assert.ok(resizeIndex >= 0);
         assert.ok(historyIndex >= 0);
         assert.ok(saveIndex >= 0);
-        assert.ok(propertiesIndex < resizeIndex);
-        assert.ok(resizeIndex < historyIndex);
+        assert.ok(propertiesIndex < historyIndex);
         assert.ok(historyIndex < saveIndex);
+    });
+
+    test('replaces static resize and crop cards with a tool rail and shared tool options', () => {
+        assert.ok(provider.includes('id="toolRail"'));
+        assert.ok(provider.includes('id="btnToolSelect"'));
+        assert.ok(provider.includes('id="btnToolCrop"'));
+        assert.ok(provider.includes('id="btnToolResize"'));
+        assert.ok(provider.includes('id="btnToolMosaic"'));
+        assert.ok(provider.includes('id="btnToolMove"'));
+        assert.ok(provider.includes('id="toolOptionsSection"'));
+        assert.ok(provider.includes('id="toolOptionsCrop"'));
+        assert.ok(provider.includes('id="toolOptionsResize"'));
+        assert.ok(provider.includes('id="toolOptionsMosaic"'));
+        assert.ok(provider.includes('id="toolOptionsMove"'));
+        assert.ok(styles.includes('.tool-rail'));
+        assert.ok(styles.includes('.tool-rail-btn.active'));
+        assert.ok(styles.includes('.tool-options-panel.active'));
+        assert.ok(editor.includes('setActiveTool('));
     });
 
     test('shows a live selection panel for marquee size and pointer coordinates', () => {
@@ -163,7 +179,7 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('moveToolbarDrag'));
         assert.ok(styles.includes('.canvas-toolbar-layer'));
         assert.ok(styles.includes('--ruler-v-width: 44px;'));
-        assert.ok(styles.includes('left: var(--ruler-v-width);'));
+        assert.ok(styles.includes('left: calc(var(--tool-rail-width) + var(--ruler-v-width));'));
         assert.ok(styles.includes('left: 50%;'));
         assert.ok(styles.includes('.toolbar-drag-handle'));
         assert.ok(styles.includes('border: 1px solid rgba(77, 163, 224, 0.45);'));
@@ -213,9 +229,11 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('function showMosaicModal()'));
         assert.ok(editor.includes('function renderMosaicPreview()'));
         assert.ok(editor.includes('function hideMosaicModal()'));
-        assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', showMosaicModal);"));
-        assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
+        assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', () => {"));
+        assert.ok(editor.includes("setActiveTool('mosaic');"));
         assert.ok(editor.includes('showMosaicModal();'));
+        assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
+        assert.ok(editor.includes("setActiveTool('mosaic');"));
         assert.ok(provider.includes('shortcuts.mosaicSelection'));
     });
 

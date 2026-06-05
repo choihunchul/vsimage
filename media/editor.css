@@ -35,13 +35,14 @@ body, html {
 /* Layout: [corner][rulerH] / [rulerV][scrollable canvas]                    */
 :root {
     --ruler-size: 20px;
+    --tool-rail-width: 56px;
     --ruler-v-width: 44px;
 }
 
 .canvas-workspace {
     flex: 1;
     display: grid;
-    grid-template-columns: var(--ruler-v-width) 1fr;
+    grid-template-columns: var(--tool-rail-width) var(--ruler-v-width) 1fr;
     grid-template-rows:    var(--ruler-size) 1fr;
     overflow: hidden;
     min-height: 0;
@@ -50,19 +51,16 @@ body, html {
 
 /* The scrollable canvas viewport (bottom-right grid cell) */
 .canvas-scroll-area {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
     overflow: auto;
     position: relative;
     z-index: 1;
-    background-color: #0d0d0d;
-    background-image:
-        linear-gradient(45deg, #181818 25%, transparent 25%),
-        linear-gradient(-45deg, #181818 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #181818 75%),
-        linear-gradient(-45deg, transparent 75%, #181818 75%);
-    background-size: 20px 20px;
-    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color: #383838;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+        inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+        inset 0 0 24px rgba(0, 0, 0, 0.08);
     min-height: 0;
 }
 
@@ -91,8 +89,9 @@ body, html {
 .image-container .cropper-container {
     overflow: visible;
     box-shadow:
-        inset 0 0 0 1px rgba(0, 0, 0, 0.72),
-        inset 0 0 0 2px rgba(255, 255, 255, 0.38);
+        inset 0 0 0 1px rgba(0, 0, 0, 0.88),
+        inset 0 0 0 2px rgba(255, 255, 255, 0.56),
+        0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
 .image-container img {
@@ -222,10 +221,105 @@ body, html {
     cursor: crosshair !important;
 }
 
+.tool-rail {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 8px;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, rgba(24, 24, 24, 0.98), rgba(18, 18, 18, 0.98));
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 3;
+}
+
+.tool-rail-btn {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 11px;
+    background: rgba(42, 42, 42, 0.92);
+    color: #d6d6d6;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease, color 0.12s ease;
+}
+
+.tool-rail-btn:hover {
+    background: rgba(58, 58, 58, 0.96);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.tool-rail-btn.active {
+    background: #f06c2f;
+    color: #ffffff;
+    border-color: rgba(240, 108, 47, 0.95);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.tool-rail-btn:active {
+    transform: scale(0.98);
+}
+
+.tool-rail-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    stroke: currentColor;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+.tool-rail-icon-fill {
+    fill: currentColor;
+    stroke: none;
+}
+
+.tool-rail-icon-grid rect {
+    fill: currentColor;
+    stroke: none;
+}
+
+.tool-rail-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.tool-options-panel {
+    display: none;
+}
+
+.tool-options-panel.active {
+    display: block;
+}
+
+.section-card-tool-options {
+    position: relative;
+}
+
+.tool-options-note {
+    margin: 0;
+    color: #b7b7b7;
+}
+
 /* Toolbar overlay — pinned to bottom of canvas viewport */
 .canvas-toolbar-layer {
     position: absolute;
-    left: var(--ruler-v-width);
+    left: calc(var(--tool-rail-width) + var(--ruler-v-width));
     right: 0;
     top: 0;
     bottom: 0;
@@ -760,6 +854,35 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
 .slider-row input[type="range"] {
     flex: 1;
     accent-color: var(--btn-bg);
+}
+
+.resize-scale-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.resize-scale-row > label {
+    margin-bottom: 0;
+}
+
+.resize-lock-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.resize-lock-row input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.resize-lock-row label {
+    margin-bottom: 0;
+    font-size: 0.75rem;
+    user-select: none;
 }
 
 /* Empty dashboard state */
@@ -1372,7 +1495,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 
 /* ── Rulers (grid cells) ─────────────────────────────────── */
 .ruler-corner {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
     background: #1a1a1a !important;
     border-right: 1px solid #333;
@@ -1389,7 +1512,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 }
 
 .ruler-h {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     width: 100%;
     height: var(--ruler-size);
@@ -1397,7 +1520,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 }
 
 .ruler-v {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 2;
     width: var(--ruler-v-width);
     height: 100%;

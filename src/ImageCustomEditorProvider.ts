@@ -436,6 +436,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         const transformLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'transformLogic.js')));
         const loupeLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'loupeLogic.js')));
         const sidebarAutoCollapseLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'sidebarAutoCollapseLogic.js')));
+        const toolRailLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'toolRailLogic.js')));
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.js')));
         const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.css')));
         const cropperJsUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.js')));
@@ -477,6 +478,65 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
                     <!-- Workspace Area (grid: ruler-corner | rulerH / rulerV | scrollable canvas) -->
                     <div class="canvas-workspace" id="workspace" tabindex="-1" style="display: none; outline: none;">
+                        <div class="tool-rail" id="toolRail" style="display: none;">
+                            <button type="button" class="tool-rail-btn active" id="btnToolSelect" data-tool="select" data-i18n-title="shortcuts.marqueeSelect">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="4" y="4" width="12" height="12" rx="2"></rect>
+                                    <path d="M14.5 14.5 20 20"></path>
+                                    <path d="M17 20h3v-3"></path>
+                                </svg>
+                                <span class="tool-rail-label" data-i18n="shortcuts.marqueeSelect"></span>
+                            </button>
+                            <button type="button" class="tool-rail-btn" id="btnToolCrop" data-tool="crop" data-i18n-title="shortcuts.toggleCrop">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M7 3v6H3"></path>
+                                    <path d="M17 3h4v4"></path>
+                                    <path d="M21 17h-4v4"></path>
+                                    <path d="M3 17h4v4"></path>
+                                    <path d="M8 16 16 8"></path>
+                                </svg>
+                                <span class="tool-rail-label" data-i18n="shortcuts.toggleCrop"></span>
+                            </button>
+                            <button type="button" class="tool-rail-btn" id="btnToolResize" data-tool="resize" data-i18n-title="sidebar.resize">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M8 16h-4v-4"></path>
+                                    <path d="M16 8h4v4"></path>
+                                    <path d="M8 8 16 16"></path>
+                                    <path d="M8 20h12"></path>
+                                    <path d="M20 8v12"></path>
+                                </svg>
+                                <span class="tool-rail-label" data-i18n="sidebar.resize"></span>
+                            </button>
+                            <button type="button" class="tool-rail-btn" id="btnToolMosaic" data-tool="mosaic" data-i18n-title="sidebar.applyMosaic">
+                                <svg class="tool-rail-icon tool-rail-icon-grid" viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="4" y="4" width="4" height="4" rx="1"></rect>
+                                    <rect x="10" y="4" width="4" height="4" rx="1"></rect>
+                                    <rect x="16" y="4" width="4" height="4" rx="1"></rect>
+                                    <rect x="4" y="10" width="4" height="4" rx="1"></rect>
+                                    <rect x="10" y="10" width="4" height="4" rx="1"></rect>
+                                    <rect x="16" y="10" width="4" height="4" rx="1"></rect>
+                                    <rect x="4" y="16" width="4" height="4" rx="1"></rect>
+                                    <rect x="10" y="16" width="4" height="4" rx="1"></rect>
+                                    <rect x="16" y="16" width="4" height="4" rx="1"></rect>
+                                </svg>
+                                <span class="tool-rail-label" data-i18n="sidebar.applyMosaic"></span>
+                            </button>
+                            <button type="button" class="tool-rail-btn" id="btnToolMove" data-tool="move" data-i18n-title="shortcuts.pan">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 3v18"></path>
+                                    <path d="M3 12h18"></path>
+                                    <path d="M12 3l-3 3"></path>
+                                    <path d="M12 3l3 3"></path>
+                                    <path d="M12 21l-3-3"></path>
+                                    <path d="M12 21l3-3"></path>
+                                    <path d="M3 12l3-3"></path>
+                                    <path d="M3 12l3 3"></path>
+                                    <path d="M21 12l-3-3"></path>
+                                    <path d="M21 12l-3 3"></path>
+                                </svg>
+                                <span class="tool-rail-label" data-i18n="shortcuts.pan"></span>
+                            </button>
+                        </div>
                         <div class="ruler-corner" id="rulerCorner"></div>
                         <canvas class="ruler ruler-h" id="rulerH"></canvas>
                         <canvas class="ruler ruler-v" id="rulerV"></canvas>
@@ -569,64 +629,73 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                             <p class="tool-hint" data-i18n="sidebar.selectionHint"></p>
                         </div>
 
-                        <div class="section-card">
-                            <div class="section-title" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span data-i18n="sidebar.cropPresets"></span>
-                                <div style="display: flex; align-items: center; gap: 4px; text-transform: none;">
-                                    <input type="checkbox" id="chkEnableCrop" style="margin: 0; cursor: pointer;">
-                                    <label for="chkEnableCrop" style="font-size: 0.75rem; user-select: none; cursor: pointer; color: #ccc;" data-i18n="sidebar.enableCrop" data-shortcut="C / M"></label>
-                                </div>
+                        <div class="section-card section-card-tool-options" id="toolOptionsSection">
+                            <div class="section-title" data-i18n="sidebar.toolOptions">Tool Options</div>
+                            <div class="tool-options-panel active" id="toolOptionsSelect">
+                                <p class="tool-options-note" data-i18n="shortcuts.marqueeSelect"></p>
                             </div>
-                            <div class="btn-grid" id="cropPresets" style="margin-bottom: 8px;">
-                                <button class="btn-secondary" data-auto="true" data-i18n="sidebar.cropAuto"></button>
-                                <button class="btn-secondary" data-ratio="NaN" data-i18n="sidebar.cropFree"></button>
-                                <button class="btn-secondary" data-ratio="1">1:1</button>
-                                <button class="btn-secondary" data-ratio="1.77777777778">16:9</button>
-                                <button class="btn-secondary" data-ratio="1.33333333333">4:3</button>
-                            </div>
-                            <button class="btn-accent" id="btnApplyCrop" data-shortcut="Enter"><span data-i18n="sidebar.applyCrop"></span><span class="ui-shortcut-badge"></span></button>
-                            <button class="btn-secondary" id="btnApplyMosaic" style="margin-top: 8px;" data-i18n="sidebar.applyMosaic"></button>
-                            <div class="control-group magic-wand-controls" style="margin-top: 12px; margin-bottom: 0;">
-                                <label data-i18n="sidebar.magicWand"></label>
-                                <div class="slider-row">
-                                    <input type="range" id="rngMagicWandTolerance" min="0" max="128" value="32">
-                                    <span id="magicWandToleranceVal" style="min-width: 28px; text-align: right; font-size: 0.8rem;">32</span>
-                                </div>
-                                <p class="tool-hint" data-i18n="sidebar.magicWandHint"></p>
-                            </div>
-                        </div>
-
-                        <div class="section-card">
-                            <div class="section-title" data-i18n="sidebar.resize"></div>
-                            <div class="control-group">
-                                <div class="input-row resize-dimension-row">
-                                    <div class="resize-dimension-field">
-                                        <label data-i18n="sidebar.width"></label>
-                                        <input type="number" id="txtWidth" class="form-control" min="1" step="1" inputmode="numeric">
-                                    </div>
-                                    <div class="resize-dimension-field">
-                                        <label data-i18n="sidebar.height"></label>
-                                        <input type="number" id="txtHeight" class="form-control" min="1" step="1" inputmode="numeric">
+                            <div class="tool-options-panel" id="toolOptionsCrop">
+                                <div class="section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                                    <span data-i18n="sidebar.cropPresets"></span>
+                                    <div style="display: flex; align-items: center; gap: 4px; text-transform: none;">
+                                        <input type="checkbox" id="chkEnableCrop" style="margin: 0; cursor: pointer;">
+                                        <label for="chkEnableCrop" style="font-size: 0.75rem; user-select: none; cursor: pointer; color: #ccc;" data-i18n="sidebar.enableCrop" data-shortcut="C / M"></label>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="control-group">
-                                <label data-i18n-label="sidebar.resizeScale" data-percent-id="resizeScaleVal" data-percent-input="rngResizeScale" data-percent-default="100">Scale (<span id="resizeScaleVal">100</span>%)</label>
-                                <div class="slider-row">
-                                    <input type="range" id="rngResizeScale" min="10" max="200" step="1" value="100">
+                                <div class="btn-grid" id="cropPresets" style="margin-bottom: 8px;">
+                                    <button class="btn-secondary" data-auto="true" data-i18n="sidebar.cropAuto"></button>
+                                    <button class="btn-secondary" data-ratio="NaN" data-i18n="sidebar.cropFree"></button>
+                                    <button class="btn-secondary" data-ratio="1">1:1</button>
+                                    <button class="btn-secondary" data-ratio="1.77777777778">16:9</button>
+                                    <button class="btn-secondary" data-ratio="1.33333333333">4:3</button>
+                                </div>
+                                <button class="btn-accent" id="btnApplyCrop" data-shortcut="Enter"><span data-i18n="sidebar.applyCrop"></span><span class="ui-shortcut-badge"></span></button>
+                                <div class="control-group magic-wand-controls" style="margin-top: 12px; margin-bottom: 0;">
+                                    <label data-i18n="sidebar.magicWand"></label>
+                                    <div class="slider-row">
+                                        <input type="range" id="rngMagicWandTolerance" min="0" max="128" value="32">
+                                        <span id="magicWandToleranceVal" style="min-width: 28px; text-align: right; font-size: 0.8rem;">32</span>
+                                    </div>
+                                    <p class="tool-hint" data-i18n="sidebar.magicWandHint"></p>
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
-                                <input type="checkbox" id="chkLockRatio" checked>
-                                <label for="chkLockRatio" style="font-size: 0.75rem; user-select: none;" data-i18n="sidebar.lockRatio"></label>
-                            </div>
-                            <button class="btn-accent" id="btnApplyResize" data-i18n="sidebar.applyResize"></button>
-                            <div class="control-group sharpen-section" id="sharpenSection" style="display: none;">
-                                <label data-i18n-label="sidebar.sharpen" data-percent-id="sharpenVal" data-percent-input="rngSharpen" data-percent-default="0">Sharpen (<span id="sharpenVal">0</span>%)</label>
-                                <div class="slider-row">
-                                    <input type="range" id="rngSharpen" min="0" max="100" value="0" disabled>
+                            <div class="tool-options-panel" id="toolOptionsResize">
+                                <div class="control-group">
+                                    <div class="input-row resize-dimension-row">
+                                        <div class="resize-dimension-field">
+                                            <label data-i18n="sidebar.width"></label>
+                                            <input type="number" id="txtWidth" class="form-control" min="1" step="1" inputmode="numeric">
+                                        </div>
+                                        <div class="resize-dimension-field">
+                                            <label data-i18n="sidebar.height"></label>
+                                            <input type="number" id="txtHeight" class="form-control" min="1" step="1" inputmode="numeric">
+                                        </div>
+                                    </div>
                                 </div>
-                                <p class="tool-hint" data-i18n="sidebar.sharpenHint"></p>
+                                <div class="control-group resize-scale-row">
+                                    <label data-i18n-label="sidebar.resizeScale" data-percent-id="resizeScaleVal" data-percent-input="rngResizeScale" data-percent-default="100">Scale (<span id="resizeScaleVal">100</span>%)</label>
+                                    <div class="slider-row">
+                                        <input type="range" id="rngResizeScale" min="10" max="200" step="1" value="100">
+                                        <div class="resize-lock-row">
+                                            <input type="checkbox" id="chkLockRatio" checked>
+                                            <label for="chkLockRatio" data-i18n="sidebar.lockRatio"></label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="btn-accent" id="btnApplyResize" data-i18n="sidebar.applyResize"></button>
+                                <div class="control-group sharpen-section" id="sharpenSection" style="display: none;">
+                                    <label data-i18n-label="sidebar.sharpen" data-percent-id="sharpenVal" data-percent-input="rngSharpen" data-percent-default="0">Sharpen (<span id="sharpenVal">0</span>%)</label>
+                                    <div class="slider-row">
+                                        <input type="range" id="rngSharpen" min="0" max="100" value="0" disabled>
+                                    </div>
+                                    <p class="tool-hint" data-i18n="sidebar.sharpenHint"></p>
+                                </div>
+                            </div>
+                            <div class="tool-options-panel" id="toolOptionsMosaic">
+                                <button class="btn-secondary" id="btnApplyMosaic" data-i18n="sidebar.applyMosaic"></button>
+                            </div>
+                            <div class="tool-options-panel" id="toolOptionsMove">
+                                <p class="tool-options-note" data-i18n="shortcuts.pan"></p>
                             </div>
                         </div>
 
@@ -836,6 +905,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <script src="${transformLogicUri}"></script>
                 <script src="${loupeLogicUri}"></script>
                 <script src="${sidebarAutoCollapseLogicUri}"></script>
+                <script src="${toolRailLogicUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
             </html>

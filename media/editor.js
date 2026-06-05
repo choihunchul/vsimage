@@ -261,9 +261,25 @@
             return en;
         }
     }
+    const toolRailLogic = globalThis.VsimageToolRailLogic || {
+        DEFAULT_ACTIVE_TOOL: 'select',
+        resolveToolForShortcutAction: (_action, currentTool) => currentTool,
+        resolveToolAfterApply: (tool) => tool,
+        shouldEnableCropForTool: (tool) => tool === 'crop',
+        shouldBlockMarqueeCreation: (tool) => tool === 'move'
+    };
     const imageEl = document.getElementById('image');
     const sidebar = document.getElementById('sidebar');
     const toolbar = document.getElementById('toolbar');
+    const toolRail = document.getElementById('toolRail');
+    const toolButtons = Array.from(document.querySelectorAll('[data-tool]'));
+    const toolOptionPanels = {
+        select: document.getElementById('toolOptionsSelect'),
+        crop: document.getElementById('toolOptionsCrop'),
+        resize: document.getElementById('toolOptionsResize'),
+        mosaic: document.getElementById('toolOptionsMosaic'),
+        move: document.getElementById('toolOptionsMove')
+    };
     
     const txtWidth = document.getElementById('txtWidth');
     const txtHeight = document.getElementById('txtHeight');
@@ -302,6 +318,7 @@
     let historyStack = [];
     let sidebarAutoCollapseState = { enabled: false, collapsed: false };
     let sidebarAutoCollapseTimer = null;
+    let activeTool = toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select';
     let initialImageSrc = '';
     let isEyedropperActive = false;
     let isColorPickerMode = false;
@@ -665,6 +682,7 @@
         initialImageSrc = src;
         currentFileSizeBytes = parseFileSizeBytes(fileSizeBytes);
         setFileSizeLabel(currentFileSizeBytes);
+        setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select');
         initEditor(src, { preserveInitialSrc: true });
         vscode.postMessage({ command: 'show-toast', text: t('toast.reverted') });
     }
@@ -760,8 +778,12 @@
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
     }
 
+    function isPanShortcutPressed() {
+        return activeTool === 'move' || isSpacePressed || isHandPressed;
+    }
+
     function activateMarqueeOnDrag(startPoint) {
-        if (!cropper || chkEnableCrop.checked || !startPoint) {
+        if (!cropper || chkEnableCrop.checked || !startPoint || toolRailLogic.shouldBlockMarqueeCreation(activeTool)) {
             return false;
         }
 
@@ -1762,10 +1784,6 @@
         return workspace && workspace.style.display !== 'none';
     }
 
-    function isPanShortcutPressed() {
-        return isSpacePressed || isHandPressed;
-    }
-
     function setPanMode(active) {
         if (canvasScrollArea) {
             canvasScrollArea.classList.toggle('pan-mode', active);
@@ -2342,6 +2360,9 @@
     }
 
     function showEditorChrome() {
+        if (toolRail) {
+            toolRail.style.display = 'flex';
+        }
         if (sidebar) {
             sidebar.style.display = 'flex';
         }
@@ -2354,6 +2375,9 @@
     function hideEditorChrome() {
         cancelSidebarAutoCollapseTimer();
         stopToolbarDrag();
+        if (toolRail) {
+            toolRail.style.display = 'none';
+        }
         if (sidebar) {
             sidebar.style.display = 'none';
             sidebar.classList.remove('sidebar-controls-collapsed');
@@ -2439,6 +2463,7 @@
     }
 
     function startEditorMode() {
+        setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select');
         chkEnableCrop.checked = false;
         syncCropPresetUI();
         if (!imageEl || !imageEl.getAttribute('src') || imageEl.getAttribute('src') === '') {
@@ -2517,6 +2542,7 @@
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
             showEditorChrome();
+            setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select');
             initEditor(event.target.result);
             if (isDocumentEditor) {
                 notifyDocumentChanged('edit.edit');
@@ -2988,6 +3014,9 @@
             isMarqueeMode = false;
         }
         syncCropPresetUI();
+        setActiveTool(chkEnableCrop.checked ? (isMarqueeMode ? 'select' : 'crop') : 'select', {
+            setMarqueeMode: isMarqueeMode && chkEnableCrop.checked
+        });
     });
 
     function toggleCropModeWithKey() {
@@ -3016,6 +3045,7 @@
 
         endMagicWandMode(false);
         endColorPickerMode();
+        isMarqueeMode = true;
 
         if (!chkEnableCrop.checked) {
             chkEnableCrop.checked = true;
@@ -3023,8 +3053,8 @@
             initMarqueeToFullImage();
         }
 
-        isMarqueeMode = true;
         applyMarqueeShape();
+        setActiveTool('select', { setMarqueeMode: true });
         focusCropKeyboardTarget();
         vscode.postMessage({
             command: 'show-toast',
@@ -3036,6 +3066,7 @@
     const presetButtons = document.querySelectorAll('#cropPresets button');
     presetButtons.forEach(btn => {
         btn.addEventListener('click', () => {
+            setActiveTool('crop');
             ensureCropModeEnabled();
 
             presetButtons.forEach(b => b.classList.remove('active'));
@@ -3144,6 +3175,46 @@
         }
     }
 
+    function syncToolOptionsVisibility() {
+        Object.keys(toolOptionPanels).forEach((tool) => {
+            const panel = toolOptionPanels[tool];
+            if (panel) {
+                panel.classList.toggle('active', tool === activeTool);
+            }
+        });
+    }
+
+    function syncToolRailButtons() {
+        toolButtons.forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.tool === activeTool);
+        });
+    }
+
+    function setActiveTool(nextTool, options = {}) {
+        const resolvedTool = nextTool || toolRailLogic.DEFAULT_ACTIVE_TOOL || 'select';
+        activeTool = resolvedTool;
+        syncToolRailButtons();
+        syncToolOptionsVisibility();
+
+        if (toolRailLogic.shouldEnableCropForTool(activeTool) && !chkEnableCrop.checked) {
+            ensureCropModeEnabled();
+        }
+
+        if (options.setMarqueeMode === true) {
+            isMarqueeMode = true;
+        } else if (options.setMarqueeMode === false) {
+            isMarqueeMode = false;
+        }
+
+        if (activeTool === 'move') {
+            setPanMode(true);
+        } else {
+            setPanMode(isPanShortcutPressed());
+        }
+
+        updateCropInteraction();
+    }
+
     function autoCropToContent() {
         if (!cropper) {
             return false;
@@ -3245,6 +3316,7 @@
             hasCropper: !!cropper,
             cropEnabled: chkEnableCrop.checked,
             cropped: !!(cropper && cropper.cropped),
+            activeTool,
             eyedropperActive: isEyedropperActive,
             magicWandMode: isMagicWandMode,
             colorPickerMode: isColorPickerMode,
@@ -3361,6 +3433,31 @@
         toggleZoomView();
     });
 
+    toolButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const tool = btn.dataset.tool || 'select';
+            if (tool === 'crop') {
+                setActiveTool('crop');
+                return;
+            }
+            if (tool === 'select') {
+                setActiveTool('select');
+                return;
+            }
+            if (tool === 'resize') {
+                setActiveTool('resize');
+                return;
+            }
+            if (tool === 'mosaic') {
+                setActiveTool('mosaic');
+                return;
+            }
+            if (tool === 'move') {
+                setActiveTool('move');
+            }
+        });
+    });
+
     // Format changes display quality slider
     selFormat.addEventListener('change', () => {
         const val = selFormat.value;
@@ -3457,13 +3554,18 @@
         chkEnableCrop.checked = false;
         syncCropPresetUI();
         initEditor(newSrc);
+        activeTool = toolRailLogic.resolveToolAfterApply(activeTool, 'crop');
+        setActiveTool(activeTool);
 
         notifyDocumentChanged('edit.crop');
         vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
     });
 
     if (btnApplyMosaic) {
-        btnApplyMosaic.addEventListener('click', showMosaicModal);
+        btnApplyMosaic.addEventListener('click', () => {
+            setActiveTool('mosaic');
+            showMosaicModal();
+        });
     }
 
     // Hook up saving triggers
@@ -4385,6 +4487,8 @@
         chkEnableCrop.checked = false;
         syncCropPresetUI();
         initEditor(newSrc);
+        activeTool = toolRailLogic.resolveToolAfterApply(activeTool, 'crop');
+        setActiveTool(activeTool);
         notifyDocumentChanged('edit.crop');
         vscode.postMessage({ command: 'show-toast', text: t('toast.cropApplied') });
     }
@@ -4474,6 +4578,9 @@
             return;
         }
         if (e.button !== 0) {
+            return;
+        }
+        if (toolRailLogic.shouldBlockMarqueeCreation(activeTool)) {
             return;
         }
 
@@ -4747,6 +4854,7 @@
             return true;
         }
         if (shortcutAction === 'mosaic') {
+            setActiveTool('mosaic');
             showMosaicModal();
             return true;
         }

@@ -26,6 +26,7 @@
   "sidebar.history": "🕘 History",
   "sidebar.historyHint": "Click a snapshot to restore that state.",
   "history.current": "Current",
+  "sidebar.toolOptions": "Tool Options",
   "sidebar.cropPresets": "✂️ Crop Presets",
   "sidebar.enableCrop": "Enable",
   "sidebar.cropFree": "Free",
