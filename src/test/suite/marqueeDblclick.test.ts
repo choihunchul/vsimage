@@ -29,6 +29,14 @@ const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.j
             spacePressed?: boolean;
         }
     ) => { x: number; y: number; width: number; height: number } | null;
+    resolveDragMarqueeBox: (
+        state: {
+            startPoint?: { x: number; y: number } | null;
+            currentPoint?: { x: number; y: number } | null;
+            originalWidth: number;
+            originalHeight: number;
+        }
+    ) => { x: number; y: number; width: number; height: number } | null;
     getMarqueeDblClickToggleAction: (
         crop: { x: number; y: number; width: number; height: number },
         ow: number,
@@ -48,6 +56,7 @@ const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.j
         point: { x: number; y: number } | null,
         crop: { x: number; y: number; width: number; height: number } | null
     ) => boolean;
+    shouldAutoEnableMarqueeOnDrag: (state: Record<string, boolean>) => boolean;
 };
 
 suite('Marquee double-click logic', () => {
@@ -65,6 +74,7 @@ suite('Marquee double-click logic', () => {
         colorPickerMode: false,
         spacePressed: false,
         targetInCanvas: true,
+        targetOnImage: true,
         targetInToolbar: false,
         targetInModal: false
     };
@@ -128,6 +138,16 @@ suite('Marquee double-click logic', () => {
             spacePressed: true
         });
         assert.deepStrictEqual(moved, { x: 130, y: 65, width: 400, height: 300 });
+    });
+
+    test('resolveDragMarqueeBox builds a box that follows the drag path', () => {
+        const box = logic.resolveDragMarqueeBox({
+            startPoint: { x: 200, y: 180 },
+            currentPoint: { x: 280, y: 260 },
+            originalWidth: OW,
+            originalHeight: OH
+        });
+        assert.deepStrictEqual(box, { x: 200, y: 180, width: 80, height: 80 });
     });
 
     test('canHandleMarqueeDblClick rejects inactive modes and outside canvas', () => {
@@ -203,6 +223,47 @@ suite('Marquee double-click logic', () => {
         );
         assert.strictEqual(
             logic.shouldInvokeImageZoomDblClick(canvasState, null, null),
+            false
+        );
+    });
+
+    test('shouldAutoEnableMarqueeOnDrag only activates on plain image drags', () => {
+        assert.strictEqual(
+            logic.shouldAutoEnableMarqueeOnDrag(baseState),
+            false
+        );
+        assert.strictEqual(
+            logic.shouldAutoEnableMarqueeOnDrag({
+                ...baseState,
+                cropEnabled: false,
+                cropped: false,
+                targetOnImage: true
+            }),
+            true
+        );
+        assert.strictEqual(
+            logic.shouldAutoEnableMarqueeOnDrag({
+                ...baseState,
+                cropEnabled: true,
+                cropped: false
+            }),
+            false
+        );
+        assert.strictEqual(
+            logic.shouldAutoEnableMarqueeOnDrag({
+                ...baseState,
+                cropEnabled: false,
+                cropped: true
+            }),
+            false
+        );
+        assert.strictEqual(
+            logic.shouldAutoEnableMarqueeOnDrag({
+                ...baseState,
+                cropEnabled: false,
+                cropped: false,
+                targetOnImage: false
+            }),
             false
         );
     });

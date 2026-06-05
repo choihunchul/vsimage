@@ -523,6 +523,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
 
                     <!-- Control Panel -->
                     <div class="sidebar-controls" id="sidebar" style="display: none;">
+                        <button type="button" id="btnSidebarAutoCollapse" class="sidebar-auto-collapse-toggle" data-i18n-title="sidebar.autoCollapse" aria-pressed="false">
+                            <span class="sidebar-auto-collapse-toggle-icon" aria-hidden="true">‹</span>
+                        </button>
                         <div class="sidebar-scroll">
                         <div class="section-card section-card-properties">
                             <div class="section-title section-title-with-version">
@@ -533,30 +536,34 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 <div><span data-i18n="sidebar.dimensions"></span> <span id="lblDimensions">0 × 0</span> px</div>
                                 <div><span data-i18n="sidebar.fileSize"></span> <span id="lblFileSize">—</span></div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 8px;">
-                                <input type="checkbox" id="chkAutoCollapse">
-                                <label for="chkAutoCollapse" style="font-size: 0.75rem; user-select: none; cursor: pointer;" data-i18n="sidebar.autoCollapse"></label>
-                            </div>
                         </div>
 
                         <div class="section-card section-card-selection">
                             <div class="section-title" data-i18n="sidebar.selection"></div>
                             <div class="selection-info-grid">
                                 <div class="selection-info-item">
-                                    <div class="selection-info-label" data-i18n="selection.width"></div>
-                                    <div class="selection-info-value" id="lblMarqueeWidth">— px</div>
+                                    <div class="selection-info-line">
+                                        <span class="selection-info-label" data-i18n="selection.width"></span>
+                                        <span class="selection-info-value" id="lblMarqueeWidth">— px</span>
+                                    </div>
                                 </div>
                                 <div class="selection-info-item">
-                                    <div class="selection-info-label" data-i18n="selection.height"></div>
-                                    <div class="selection-info-value" id="lblMarqueeHeight">— px</div>
+                                    <div class="selection-info-line">
+                                        <span class="selection-info-label" data-i18n="selection.height"></span>
+                                        <span class="selection-info-value" id="lblMarqueeHeight">— px</span>
+                                    </div>
                                 </div>
                                 <div class="selection-info-item">
-                                    <div class="selection-info-label" data-i18n="selection.x"></div>
-                                    <div class="selection-info-value" id="lblMarqueeX">— px</div>
+                                    <div class="selection-info-line">
+                                        <span class="selection-info-label" data-i18n="selection.x"></span>
+                                        <span class="selection-info-value" id="lblMarqueeX">— px</span>
+                                    </div>
                                 </div>
                                 <div class="selection-info-item">
-                                    <div class="selection-info-label" data-i18n="selection.y"></div>
-                                    <div class="selection-info-value" id="lblMarqueeY">— px</div>
+                                    <div class="selection-info-line">
+                                        <span class="selection-info-label" data-i18n="selection.y"></span>
+                                        <span class="selection-info-value" id="lblMarqueeY">— px</span>
+                                    </div>
                                 </div>
                             </div>
                             <p class="tool-hint" data-i18n="sidebar.selectionHint"></p>

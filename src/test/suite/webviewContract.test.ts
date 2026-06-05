@@ -50,6 +50,10 @@ suite('Webview contracts', () => {
 
     test('syncs the bottom zoom toggle label from the live zoom state', () => {
         assert.ok(editor.includes('updateZoomToggleButton()'));
+        assert.ok(editor.includes('isActualPixelsZoomTarget(currentRatio, fitRatio)'));
+        assert.ok(editor.includes('setZoomToggleButtonLabel(isActualPixelsTarget);'));
+        assert.ok(editor.includes('setZoomToggleButtonLabel(!isActualPixelsTarget);'));
+        assert.ok(editor.includes('updateZoomIndicator(false);'));
         assert.ok(editor.includes('resolveToggleZoomTargetRatio(currentRatio, fitRatio)'));
         assert.ok(editor.includes("document.getElementById('btnReset').addEventListener('click'"));
         assert.ok(provider.includes('lblResetText'));
@@ -108,7 +112,9 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('lblMarqueeHeight'));
         assert.ok(provider.includes('lblMarqueeX'));
         assert.ok(provider.includes('lblMarqueeY'));
+        assert.ok(provider.includes('selection-info-line'));
         assert.ok(styles.includes('.selection-info-grid'));
+        assert.ok(styles.includes('.selection-info-line'));
         assert.ok(styles.includes('.selection-info-value.is-empty'));
         assert.ok(editor.includes('updateSelectionPanelFromCrop()'));
         assert.ok(editor.includes('updateSelectionPanelFromPointer(e)'));
@@ -128,11 +134,20 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("e.target.closest('.cropper-face')"));
     });
 
+    test('turns image drags into marquee activation when crop is off and no selection exists', () => {
+        assert.ok(editor.includes('shouldAutoEnableMarqueeOnDrag'));
+        assert.ok(editor.includes("workspace.addEventListener('mousedown'"));
+        assert.ok(editor.includes('resolveDragMarqueeBox'));
+        assert.ok(editor.includes('cropper.setData(nextBox)'));
+    });
+
     test('keeps the collapsed sidebar strip wired for hover reopen', () => {
         assert.ok(editor.includes('sidebar-controls-collapsed'));
         assert.ok(editor.includes('handleSidebarAutoCollapseMouseEnter'));
         assert.ok(editor.includes('handleSidebarAutoCollapseMouseLeave'));
         assert.ok(editor.includes('bindSidebarAutoCollapse'));
+        assert.ok(provider.includes('btnSidebarAutoCollapse'));
+        assert.ok(styles.includes('.sidebar-auto-collapse-toggle'));
         assert.ok(provider.includes('sidebar.autoCollapse'));
     });
 

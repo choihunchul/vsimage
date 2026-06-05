@@ -151,31 +151,40 @@ body, html {
 .selection-info-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 10px;
+    gap: 6px;
+    margin-top: 8px;
 }
 
 .selection-info-item {
-    padding: 8px 10px;
+    padding: 7px 10px;
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.03);
 }
 
+.selection-info-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .selection-info-label {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     line-height: 1.2;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #8a8a8a;
+    white-space: nowrap;
 }
 
 .selection-info-value {
-    margin-top: 4px;
-    font-size: 0.95rem;
-    line-height: 1.25;
+    font-size: 0.9rem;
+    line-height: 1.2;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
 }
 
 .selection-info-value.is-empty {
@@ -417,6 +426,46 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
     transition: width 480ms ease, min-width 480ms ease, flex-basis 480ms ease, padding 480ms ease;
 }
 
+.sidebar-auto-collapse-toggle {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 56px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-left: 0;
+    border-radius: 0 14px 14px 0;
+    background: linear-gradient(180deg, rgba(237, 113, 38, 0.95), rgba(205, 86, 20, 0.95));
+    color: #fff4ea;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+    z-index: 4;
+    transition: transform 180ms ease, filter 180ms ease, opacity 180ms ease, background 180ms ease;
+}
+
+.sidebar-auto-collapse-toggle:hover {
+    filter: brightness(1.08);
+}
+
+.sidebar-auto-collapse-toggle:active {
+    transform: translate(-50%, -50%) scale(0.98);
+}
+
+.sidebar-auto-collapse-toggle[aria-pressed="true"] {
+    background: linear-gradient(180deg, rgba(82, 168, 110, 0.95), rgba(49, 118, 72, 0.95));
+}
+
+.sidebar-auto-collapse-toggle-icon {
+    font-size: 1.35rem;
+    line-height: 1;
+    transform: translateX(1px);
+}
+
 .sidebar-controls-collapsed {
     width: 16px;
     min-width: 16px;
@@ -435,6 +484,10 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
     color: #8d8d8d;
     font-size: 0.75rem;
     pointer-events: none;
+}
+
+.sidebar-controls-collapsed .sidebar-auto-collapse-toggle {
+    opacity: 0.9;
 }
 
 .sidebar-scroll {

@@ -103,6 +103,26 @@ function resolveModifierMarqueeBox(state) {
     );
 }
 
+function resolveDragMarqueeBox(state) {
+    if (!state || !state.startPoint || !state.currentPoint) {
+        return null;
+    }
+
+    const {
+        startPoint,
+        currentPoint,
+        originalWidth,
+        originalHeight
+    } = state;
+
+    const x = Math.min(startPoint.x, currentPoint.x);
+    const y = Math.min(startPoint.y, currentPoint.y);
+    const width = Math.abs(currentPoint.x - startPoint.x);
+    const height = Math.abs(currentPoint.y - startPoint.y);
+
+    return clampCropBox(x, y, width || 1, height || 1, originalWidth, originalHeight);
+}
+
 /** @returns {'trimToContent'|'expandToFull'|null} */
 function getMarqueeDblClickToggleAction(cropData, originalWidth, originalHeight, tolerance = 2) {
     if (!cropData || originalWidth <= 0 || originalHeight <= 0) {
@@ -151,6 +171,25 @@ function canHandleImageZoomDblClick(state) {
         return false;
     }
     if (!state.targetInCanvas) {
+        return false;
+    }
+    if (state.targetInToolbar || state.targetInModal) {
+        return false;
+    }
+    return true;
+}
+
+function shouldAutoEnableMarqueeOnDrag(state) {
+    if (!state.hasCropper || state.cropEnabled || state.cropped) {
+        return false;
+    }
+    if (state.eyedropperActive || state.magicWandMode || state.colorPickerMode || state.spacePressed || state.zLoupeActive) {
+        return false;
+    }
+    if (!state.targetInCanvas) {
+        return false;
+    }
+    if (!state.targetOnImage) {
         return false;
     }
     if (state.targetInToolbar || state.targetInModal) {
@@ -221,12 +260,14 @@ const api = {
     isMarqueeFullImageNatural,
     isPointInCropSelection,
     resolveModifierMarqueeBox,
+    resolveDragMarqueeBox,
     getMarqueeDblClickToggleAction,
     canHandleMarqueeDblClick,
     isImageZoomBelowFull,
     shouldInvokeMarqueeDblClickToggle,
     canHandleImageZoomDblClick,
     shouldInvokeImageZoomDblClick,
+    shouldAutoEnableMarqueeOnDrag,
     isValidNaturalCropSnapshot,
     shouldSnapshotCropForZoom,
     cloneNaturalCropSnapshot,

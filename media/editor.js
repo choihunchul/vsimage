@@ -282,7 +282,7 @@
     const rngQuality = document.getElementById('rngQuality');
 
     const chkEnableCrop = document.getElementById('chkEnableCrop');
-    const chkAutoCollapse = document.getElementById('chkAutoCollapse');
+    const btnSidebarAutoCollapse = document.getElementById('btnSidebarAutoCollapse');
     const lblZoomPercent = document.getElementById('lblZoomPercent');
 
     const historyList = document.getElementById('historyList');
@@ -710,6 +710,7 @@
     let isSpacePressed = false;
     let isHandPressed = false;
     let marqueeGestureState = null;
+    let marqueeCreateDragState = null;
     let isZLoupeActive = false;
     let isZLoupeDragging = false;
     let zLoupeDragStart = null;
@@ -741,6 +742,10 @@
         if (!cropper) {
             return;
         }
+        if (marqueeCreateDragState) {
+            cropper.setDragMode('none');
+            return;
+        }
         if (marqueeGestureState) {
             return;
         }
@@ -753,6 +758,56 @@
             return;
         }
         cropper.setDragMode(chkEnableCrop.checked ? 'crop' : 'none');
+    }
+
+    function activateMarqueeOnDrag(startPoint) {
+        if (!cropper || chkEnableCrop.checked || !startPoint) {
+            return false;
+        }
+
+        chkEnableCrop.checked = true;
+        marqueeCreateDragState = { startPoint };
+        isMarqueeMode = true;
+        syncCropPresetUI();
+        applyMarqueeShape();
+        cropper.crop();
+        cropper.setData(clampCropBox(startPoint.x, startPoint.y, 1, 1));
+        updateCropInteraction();
+        return true;
+    }
+
+    function updateMarqueeDragCreate(e) {
+        if (!marqueeCreateDragState || !cropper || !e) {
+            return;
+        }
+
+        const currentPoint = getClampedImagePointFromEvent(e);
+        if (!currentPoint) {
+            return;
+        }
+
+        const nextBox = cropMarqueeLogic.resolveDragMarqueeBox({
+            startPoint: marqueeCreateDragState.startPoint,
+            currentPoint,
+            originalWidth,
+            originalHeight
+        });
+
+        if (!nextBox) {
+            return;
+        }
+
+        e.preventDefault();
+        cropper.setData(nextBox);
+    }
+
+    function endMarqueeDragCreate() {
+        if (!marqueeCreateDragState) {
+            return;
+        }
+
+        marqueeCreateDragState = null;
+        updateCropInteraction();
     }
 
     const canvasLayoutLogic = globalThis.VsimageCanvasLayoutLogic || {
@@ -2313,14 +2368,18 @@
             return;
         }
         sidebar.classList.toggle('sidebar-controls-collapsed', !!(sidebarAutoCollapseState.enabled && sidebarAutoCollapseState.collapsed));
+        if (btnSidebarAutoCollapse) {
+            btnSidebarAutoCollapse.setAttribute('aria-pressed', sidebarAutoCollapseState.enabled ? 'true' : 'false');
+            const icon = btnSidebarAutoCollapse.querySelector('.sidebar-auto-collapse-toggle-icon');
+            if (icon) {
+                icon.textContent = sidebarAutoCollapseState.enabled ? '‹' : '›';
+            }
+        }
     }
 
     function setSidebarAutoCollapseState(nextState) {
         sidebarAutoCollapseState = nextState;
         applySidebarAutoCollapseState();
-        if (chkAutoCollapse && chkAutoCollapse.checked !== sidebarAutoCollapseState.enabled) {
-            chkAutoCollapse.checked = sidebarAutoCollapseState.enabled;
-        }
     }
 
     function cancelSidebarAutoCollapseTimer() {
@@ -2361,14 +2420,14 @@
     }
 
     function bindSidebarAutoCollapse() {
-        if (chkAutoCollapse) {
-            chkAutoCollapse.checked = sidebarAutoCollapseState.enabled;
-            chkAutoCollapse.addEventListener('change', () => {
+        if (btnSidebarAutoCollapse) {
+            btnSidebarAutoCollapse.setAttribute('aria-pressed', sidebarAutoCollapseState.enabled ? 'true' : 'false');
+            btnSidebarAutoCollapse.addEventListener('click', () => {
                 cancelSidebarAutoCollapseTimer();
                 setSidebarAutoCollapseState(
                     sidebarAutoCollapseLogic.setSidebarAutoCollapseEnabled
-                        ? sidebarAutoCollapseLogic.setSidebarAutoCollapseEnabled(sidebarAutoCollapseState, chkAutoCollapse.checked)
-                        : { enabled: !!chkAutoCollapse.checked, collapsed: false }
+                        ? sidebarAutoCollapseLogic.setSidebarAutoCollapseEnabled(sidebarAutoCollapseState, !sidebarAutoCollapseState.enabled)
+                        : { enabled: !sidebarAutoCollapseState.enabled, collapsed: false }
                 );
             });
         }
@@ -2816,13 +2875,15 @@
         applyResizePanelState(resizePanelLogic.buildResizePanelFromCrop(cropper.getData()));
     }
 
-    function updateZoomIndicator() {
+    function updateZoomIndicator(syncToggleLabel = true) {
         if (!cropper) return;
         const ratio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData());
         if (ratio != null) {
             lblZoomPercent.textContent = `${zoomLogic.zoomRatioToPercent(ratio)}%`;
         }
-        updateZoomToggleButton();
+        if (syncToggleLabel) {
+            updateZoomToggleButton();
+        }
     }
 
     function updateZoomToggleButton() {
@@ -2832,8 +2893,19 @@
 
         const currentRatio = zoomLogic.getImageZoomRatioFromData(cropper.getImageData());
         const fitRatio = getViewportFitRatio();
+        const isActualPixelsTarget = isActualPixelsZoomTarget(currentRatio, fitRatio);
+        setZoomToggleButtonLabel(isActualPixelsTarget);
+    }
+
+    function isActualPixelsZoomTarget(currentRatio, fitRatio) {
         const targetRatio = zoomLogic.resolveToggleZoomTargetRatio(currentRatio, fitRatio);
-        const isActualPixelsTarget = Math.abs(targetRatio - 1) < zoomLogic.DEFAULT_ZOOM_EPSILON;
+        return Math.abs(targetRatio - 1) < zoomLogic.DEFAULT_ZOOM_EPSILON;
+    }
+
+    function setZoomToggleButtonLabel(isActualPixelsTarget) {
+        if (!btnReset) {
+            return;
+        }
 
         if (lblResetText) {
             lblResetText.textContent = isActualPixelsTarget ? '100%' : t('shortcuts.zoomFit');
@@ -2857,9 +2929,12 @@
 
         const currentRatio = zoomLogic.getImageZoomRatioFromData(data);
         const fitRatio = getViewportFitRatio();
+        const isActualPixelsTarget = isActualPixelsZoomTarget(currentRatio, fitRatio);
 
-        applyZoomTo(zoomLogic.resolveToggleZoomTargetRatio(currentRatio, fitRatio));
-        updateZoomIndicator();
+        const targetRatio = zoomLogic.resolveToggleZoomTargetRatio(currentRatio, fitRatio);
+        applyZoomTo(targetRatio);
+        setZoomToggleButtonLabel(!isActualPixelsTarget);
+        updateZoomIndicator(false);
     }
 
     function syncCropPresetUI() {
@@ -3156,6 +3231,7 @@
     }
 
     function getWorkspaceDblClickState(e) {
+        const imagePoint = getImagePointFromEvent(e);
         return {
             hasCropper: !!cropper,
             cropEnabled: chkEnableCrop.checked,
@@ -3165,6 +3241,7 @@
             colorPickerMode: isColorPickerMode,
             spacePressed: isPanShortcutPressed(),
             zLoupeActive: isZLoupeActive,
+            targetOnImage: !!imagePoint,
             targetInCanvas: !!(
                 (canvasScrollArea && canvasScrollArea.contains(e.target))
                 || e.target.closest('.cropper-container')
@@ -4382,6 +4459,34 @@
 
         showMarqueeShortcutTooltip(e.clientX, e.clientY);
     }, true);
+
+    const onMarqueeDragStart = (e) => {
+        if (!cropper || !e.target.closest('.cropper-container')) {
+            return;
+        }
+        if (e.button !== 0) {
+            return;
+        }
+
+        if (!cropMarqueeLogic.shouldAutoEnableMarqueeOnDrag(getWorkspaceDblClickState(e))) {
+            return;
+        }
+
+        const startPoint = getClampedImagePointFromEvent(e);
+        if (!activateMarqueeOnDrag(startPoint)) {
+            return;
+        }
+
+        e.stopPropagation();
+        e.preventDefault();
+    };
+
+    workspace.addEventListener('pointerdown', onMarqueeDragStart, true);
+    workspace.addEventListener('mousedown', onMarqueeDragStart, true);
+    document.addEventListener('pointermove', updateMarqueeDragCreate, true);
+    document.addEventListener('mousemove', updateMarqueeDragCreate, true);
+    document.addEventListener('pointerup', endMarqueeDragCreate, true);
+    document.addEventListener('mouseup', endMarqueeDragCreate, true);
 
     // Workspace mousemove handler during capture phase to implement Eyedropper real-time live preview and tooltip tracking
     workspace.addEventListener('mousemove', (e) => {
