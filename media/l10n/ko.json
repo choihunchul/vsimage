@@ -11,6 +11,7 @@
 
   "toolbar.zoomOut": "축소",
   "toolbar.zoomIn": "확대",
+  "toolbar.cursor": "커서",
   "toolbar.marqueeSelect": "마퀴 선택",
   "toolbar.rotateLeft": "왼쪽 회전",
   "toolbar.rotateRight": "오른쪽 회전",
@@ -92,6 +93,7 @@
   "shortcuts.copyImage": "이미지 복사",
   "shortcuts.selectAll": "전체 선택",
   "shortcuts.pan": "이미지 이동",
+  "shortcuts.cursor": "아무 작업 안 함",
   "shortcuts.zoomLoupe": "영역 확대 미리보기 (캔버스)",
   "shortcuts.dblClickImageKey": "더블클릭",
   "shortcuts.dblClickImage": "100% ↔ 맞춤 (마퀴 없을 때)",

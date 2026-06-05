@@ -106,6 +106,7 @@ suite('Webview contracts', () => {
     test('replaces static resize and crop cards with a tool rail and shared tool options', () => {
         assert.ok(provider.includes('id="toolRail"'));
         assert.ok(provider.includes('id="btnToolCursor"'));
+        assert.ok(provider.includes('id="btnToolMarquee"'));
         assert.ok(provider.includes('id="btnToolCrop"'));
         assert.ok(provider.includes('id="btnToolResize"'));
         assert.ok(provider.includes('id="btnToolMosaic"'));
@@ -116,11 +117,13 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('id="btnFlipV"'));
         assert.ok(provider.includes('id="toolOptionsSection"'));
         assert.ok(provider.includes('id="toolOptionsCursor"'));
+        assert.ok(provider.includes('id="toolOptionsMarquee"'));
         assert.ok(provider.includes('id="toolOptionsCrop"'));
         assert.ok(provider.includes('id="toolOptionsResize"'));
         assert.ok(provider.includes('id="toolOptionsMosaic"'));
         assert.ok(provider.includes('id="toolOptionsMove"'));
         assert.ok(provider.includes('properties-zoom-row'));
+        assert.ok(provider.includes('toolbar.cursor'));
         assert.ok(provider.includes('toolbar.marqueeSelect'));
         assert.ok(styles.includes('.tool-rail'));
         assert.ok(styles.includes('.tool-rail-btn.active'));
@@ -133,10 +136,13 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("let activeTool = toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor'"));
         assert.ok(!editor.includes("select: document.getElementById('toolOptionsSelect')"));
         assert.ok(editor.includes("cursor: document.getElementById('toolOptionsCursor')"));
+        assert.ok(editor.includes("marquee: document.getElementById('toolOptionsMarquee')"));
         assert.ok(editor.includes("setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor')"));
         assert.ok(editor.includes("setActiveTool('cursor')"));
         assert.ok(editor.includes("toolButtons.forEach((btn) => {"));
         assert.ok(editor.includes("const tool = btn.dataset.tool || 'cursor';"));
+        assert.ok(editor.includes("if (tool === 'marquee') {"));
+        assert.ok(editor.includes("setActiveTool('marquee', { setMarqueeMode: true });"));
         assert.ok(editor.includes("btnApplyCrop.addEventListener('click', () => {"));
         assert.ok(editor.includes('btnApplyCrop.click();'));
         assert.ok(editor.includes("activeTool = toolRailLogic.resolveToolAfterApply(activeTool, 'crop');"));
@@ -145,6 +151,7 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('if (suppressCropCheckboxToolSync) {'));
         assert.ok(editor.includes("chkEnableCrop.dispatchEvent(new Event('change'));"));
         assert.ok(editor.includes('toolRailLogic.shouldBlockMarqueeCreation(activeTool)'));
+        assert.ok(editor.includes("setActiveTool('marquee', { setMarqueeMode: true });"));
     });
 
     test('shows a live selection panel for marquee size and pointer coordinates', () => {

@@ -11,6 +11,7 @@
 
   "toolbar.zoomOut": "Zoom Out",
   "toolbar.zoomIn": "Zoom In",
+  "toolbar.cursor": "Cursor",
   "toolbar.marqueeSelect": "Marquee Select",
   "toolbar.rotateLeft": "Rotate Left",
   "toolbar.rotateRight": "Rotate Right",
@@ -92,6 +93,7 @@
   "shortcuts.copyImage": "Copy Image",
   "shortcuts.selectAll": "Select All",
   "shortcuts.pan": "Pan Image",
+  "shortcuts.cursor": "No action",
   "shortcuts.zoomLoupe": "Magnify Area (on canvas)",
   "shortcuts.dblClickImageKey": "Double-click",
   "shortcuts.dblClickImage": "100% ↔ Fit (no marquee)",

@@ -12,7 +12,7 @@ function resolveToolForShortcutAction(action, currentTool) {
     }
 
     if (action === 'marquee') {
-        return 'cursor';
+        return 'marquee';
     }
 
     if (action === 'mosaic') {
@@ -43,11 +43,13 @@ function resolveToolAfterApply(tool, applyKind) {
 }
 
 function shouldEnableCropForTool(tool) {
-    return normalizeTool(tool) === 'crop';
+    const activeTool = normalizeTool(tool);
+    return activeTool === 'crop' || activeTool === 'marquee';
 }
 
 function shouldBlockMarqueeCreation(tool) {
-    return normalizeTool(tool) === 'move';
+    const activeTool = normalizeTool(tool);
+    return activeTool !== 'crop' && activeTool !== 'marquee';
 }
 
 const api = {

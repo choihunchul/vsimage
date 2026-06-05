@@ -479,7 +479,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     <!-- Workspace Area (grid: ruler-corner | rulerH / rulerV | scrollable canvas) -->
                     <div class="canvas-workspace" id="workspace" tabindex="-1" style="display: none; outline: none;">
                         <div class="tool-rail" id="toolRail" style="display: none;">
-                            <button type="button" class="tool-rail-btn active" id="btnToolCursor" data-tool="cursor" data-i18n-title="toolbar.marqueeSelect">
+                            <button type="button" class="tool-rail-btn active" id="btnToolCursor" data-tool="cursor" data-i18n-title="toolbar.cursor">
+                                <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M5 3 17 15 12.5 15.5 16 21 13.5 22 10 16.5 6.5 19Z"></path>
+                                </svg>
+                                <span class="tool-rail-label" data-i18n="toolbar.cursor"></span>
+                            </button>
+                            <button type="button" class="tool-rail-btn" id="btnToolMarquee" data-tool="marquee" data-i18n-title="toolbar.marqueeSelect">
                                 <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
                                     <rect x="4" y="4" width="12" height="12" rx="2"></rect>
                                     <path d="M14.5 14.5 20 20"></path>
@@ -648,6 +654,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="section-card section-card-tool-options" id="toolOptionsSection">
                             <div class="section-title" data-i18n="sidebar.toolOptions">Tool Options</div>
                             <div class="tool-options-panel active" id="toolOptionsCursor">
+                                <p class="tool-options-note" data-i18n="shortcuts.cursor"></p>
+                            </div>
+                            <div class="tool-options-panel" id="toolOptionsMarquee">
                                 <p class="tool-options-note" data-i18n="shortcuts.marqueeSelect"></p>
                             </div>
                             <div class="tool-options-panel" id="toolOptionsCrop">

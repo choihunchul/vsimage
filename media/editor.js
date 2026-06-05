@@ -265,8 +265,8 @@
         DEFAULT_ACTIVE_TOOL: 'cursor',
         resolveToolForShortcutAction: (_action, currentTool) => currentTool,
         resolveToolAfterApply: (tool) => tool,
-        shouldEnableCropForTool: (tool) => tool === 'crop',
-        shouldBlockMarqueeCreation: (tool) => tool === 'move'
+        shouldEnableCropForTool: (tool) => tool === 'crop' || tool === 'marquee',
+        shouldBlockMarqueeCreation: (tool) => tool === 'move' || tool === 'cursor' || tool === 'resize' || tool === 'mosaic'
     };
     const imageEl = document.getElementById('image');
     const sidebar = document.getElementById('sidebar');
@@ -275,6 +275,7 @@
     const toolButtons = Array.from(document.querySelectorAll('[data-tool]'));
     const toolOptionPanels = {
         cursor: document.getElementById('toolOptionsCursor'),
+        marquee: document.getElementById('toolOptionsMarquee'),
         crop: document.getElementById('toolOptionsCrop'),
         resize: document.getElementById('toolOptionsResize'),
         mosaic: document.getElementById('toolOptionsMosaic'),
@@ -3018,7 +3019,7 @@
         if (suppressCropCheckboxToolSync) {
             return;
         }
-        setActiveTool(chkEnableCrop.checked ? (isMarqueeMode ? 'cursor' : 'crop') : 'cursor', {
+        setActiveTool(chkEnableCrop.checked ? (isMarqueeMode ? 'marquee' : 'crop') : 'cursor', {
             setMarqueeMode: isMarqueeMode && chkEnableCrop.checked
         });
     });
@@ -3058,7 +3059,7 @@
         }
 
         applyMarqueeShape();
-        setActiveTool('cursor', { setMarqueeMode: true });
+        setActiveTool('marquee', { setMarqueeMode: true });
         focusCropKeyboardTarget();
         vscode.postMessage({
             command: 'show-toast',
@@ -3451,6 +3452,10 @@
             }
             if (tool === 'cursor') {
                 setActiveTool('cursor');
+                return;
+            }
+            if (tool === 'marquee') {
+                setActiveTool('marquee', { setMarqueeMode: true });
                 return;
             }
             if (tool === 'resize') {
