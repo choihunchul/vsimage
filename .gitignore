@@ -2,6 +2,7 @@ node_modules/
 dist/
 out/
 .superpowers/
+.worktrees/
 .vscode-test/
 .DS_Store
 *.vsix
