@@ -34,7 +34,8 @@ suite('Webview contracts', () => {
             'historyLogicUri',
             'transformLogicUri',
             'loupeLogicUri',
-            'sidebarAutoCollapseLogicUri'
+            'sidebarAutoCollapseLogicUri',
+            'toolRailLogicUri'
         ].forEach(uri => {
             const scriptIndex = provider.indexOf(`<script src="\${${uri}}"></script>`);
             assert.ok(scriptIndex >= 0, `${uri} script tag is missing`);
@@ -90,19 +91,73 @@ suite('Webview contracts', () => {
 
     test('keeps properties and save sticky while placing history near the top', () => {
         const propertiesIndex = provider.indexOf('section-card-properties');
-        const resizeIndex = provider.indexOf('sidebar.resize');
         const historyIndex = provider.indexOf('section-card-history');
         const saveIndex = provider.indexOf('section-card-save');
 
         assert.ok(provider.includes('sidebar.fileSize'));
         assert.ok(provider.includes('btnSidebarAutoCollapse'));
         assert.ok(propertiesIndex >= 0);
-        assert.ok(resizeIndex >= 0);
         assert.ok(historyIndex >= 0);
         assert.ok(saveIndex >= 0);
-        assert.ok(propertiesIndex < resizeIndex);
-        assert.ok(resizeIndex < historyIndex);
+        assert.ok(propertiesIndex < historyIndex);
         assert.ok(historyIndex < saveIndex);
+    });
+
+    test('replaces static resize and crop cards with a tool rail and shared tool options', () => {
+        assert.ok(provider.includes('id="toolRail"'));
+        assert.ok(provider.includes('id="btnToolCursor"'));
+        assert.ok(provider.includes('id="btnToolMarquee"'));
+        assert.ok(provider.includes('id="btnToolCrop"'));
+        assert.ok(provider.includes('id="btnToolResize"'));
+        assert.ok(provider.includes('id="btnToolMosaic"'));
+        assert.ok(provider.includes('id="btnToolMove"'));
+        assert.ok(provider.includes('id="btnRotateLeft"'));
+        assert.ok(provider.includes('id="btnRotateRight"'));
+        assert.ok(provider.includes('id="btnFlipH"'));
+        assert.ok(provider.includes('id="btnFlipV"'));
+        assert.ok(provider.includes('id="toolOptionsSection"'));
+        assert.ok(provider.includes('id="toolOptionsCursor"'));
+        assert.ok(provider.includes('id="toolOptionsMarquee"'));
+        assert.ok(provider.includes('id="toolOptionsCrop"'));
+        assert.ok(provider.includes('id="toolOptionsResize"'));
+        assert.ok(provider.includes('id="toolOptionsMosaic"'));
+        assert.ok(provider.includes('id="toolOptionsMove"'));
+        assert.ok(provider.includes('id="rngMosaicSize"'));
+        assert.ok(provider.includes('id="btnMosaicConfirm"'));
+        assert.ok(provider.includes('id="btnMosaicCancel"'));
+        assert.ok(provider.includes('properties-zoom-row'));
+        assert.ok(provider.includes('toolbar.cursor'));
+        assert.ok(provider.includes('toolbar.marqueeSelect'));
+        assert.ok(provider.includes('sidebar.mosaicSize'));
+        assert.ok(provider.includes('sidebar.mosaicCancel'));
+        assert.ok(provider.includes('sidebar.mosaicConfirm'));
+        assert.ok(styles.includes('.tool-rail'));
+        assert.ok(styles.includes('.tool-rail-btn.active'));
+        assert.ok(styles.includes('.tool-rail-secondary'));
+        assert.ok(styles.includes('.properties-zoom-row'));
+        assert.ok(styles.includes('.tool-options-panel.active'));
+    });
+
+    test('wires active tool state through the webview runtime', () => {
+        assert.ok(editor.includes("let activeTool = toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor'"));
+        assert.ok(!editor.includes("select: document.getElementById('toolOptionsSelect')"));
+        assert.ok(editor.includes("cursor: document.getElementById('toolOptionsCursor')"));
+        assert.ok(editor.includes("marquee: document.getElementById('toolOptionsMarquee')"));
+        assert.ok(editor.includes("setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor')"));
+        assert.ok(editor.includes("setActiveTool('cursor')"));
+        assert.ok(editor.includes("toolButtons.forEach((btn) => {"));
+        assert.ok(editor.includes("const tool = btn.dataset.tool || 'cursor';"));
+        assert.ok(editor.includes("if (tool === 'marquee') {"));
+        assert.ok(editor.includes("setActiveTool('marquee', { setMarqueeMode: true });"));
+        assert.ok(editor.includes("btnApplyCrop.addEventListener('click', () => {"));
+        assert.ok(editor.includes('btnApplyCrop.click();'));
+        assert.ok(editor.includes("activeTool = toolRailLogic.resolveToolAfterApply(activeTool, 'crop');"));
+        assert.ok(editor.includes('setActiveTool(activeTool);'));
+        assert.ok(editor.includes('let suppressCropCheckboxToolSync = false;'));
+        assert.ok(editor.includes('if (suppressCropCheckboxToolSync) {'));
+        assert.ok(editor.includes("chkEnableCrop.dispatchEvent(new Event('change'));"));
+        assert.ok(editor.includes('toolRailLogic.shouldBlockMarqueeCreation(activeTool)'));
+        assert.ok(editor.includes("setActiveTool('marquee', { setMarqueeMode: true });"));
     });
 
     test('shows a live selection panel for marquee size and pointer coordinates', () => {
@@ -156,19 +211,12 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('sidebar.autoCollapse'));
     });
 
-    test('lets the bottom zoom toolbar drag from its plus-arrow handle', () => {
-        assert.ok(provider.includes('toolbarDragHandle'));
-        assert.ok(provider.includes('toolbar-drag-icon'));
-        assert.ok(editor.includes('startToolbarDrag'));
-        assert.ok(editor.includes('moveToolbarDrag'));
-        assert.ok(styles.includes('.canvas-toolbar-layer'));
-        assert.ok(styles.includes('--ruler-v-width: 44px;'));
-        assert.ok(styles.includes('left: var(--ruler-v-width);'));
-        assert.ok(styles.includes('left: 50%;'));
-        assert.ok(styles.includes('.toolbar-drag-handle'));
-        assert.ok(styles.includes('border: 1px solid rgba(77, 163, 224, 0.45);'));
-        assert.ok(styles.includes('.toolbar-drag-icon'));
-        assert.ok(styles.includes('color: #ffffff;'));
+    test('moves zoom controls into the properties panel', () => {
+        assert.ok(provider.includes('properties-zoom-row'));
+        assert.ok(provider.includes('btnZoomOut'));
+        assert.ok(provider.includes('lblZoomPercent'));
+        assert.ok(provider.includes('btnZoomIn'));
+        assert.ok(provider.includes('btnReset'));
     });
 
     test('dismisses shortcut hints when the canvas image is clicked', () => {
@@ -202,8 +250,7 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('mosaicLogicUri'));
         assert.ok(provider.includes('btnApplyMosaic'));
         assert.ok(provider.includes('sidebar.applyMosaic'));
-        assert.ok(provider.includes('mosaicModal'));
-        assert.ok(provider.includes('rngMosaicSize'));
+        assert.ok(provider.includes('sidebar.mosaicHint'));
         assert.ok(provider.includes('btnMosaicConfirm'));
         assert.ok(provider.includes('btnMosaicCancel'));
         assert.ok(editor.includes('const mosaicLogic = globalThis.VsimageMosaicLogic || {'));
@@ -213,14 +260,17 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('function showMosaicModal()'));
         assert.ok(editor.includes('function renderMosaicPreview()'));
         assert.ok(editor.includes('function hideMosaicModal()'));
-        assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', showMosaicModal);"));
-        assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
+        assert.ok(editor.includes("btnApplyMosaic.addEventListener('click', () => {"));
+        assert.ok(editor.includes("setActiveTool('mosaic');"));
         assert.ok(editor.includes('showMosaicModal();'));
+        assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
+        assert.ok(editor.includes("setActiveTool('mosaic');"));
         assert.ok(provider.includes('shortcuts.mosaicSelection'));
+        assert.ok(!provider.includes('id="mosaicModal"'));
     });
 
     test('hides the magic wand UI while leaving the feature wiring dormant', () => {
-        assert.ok(styles.includes('#btnMagicWand'));
+        assert.ok(!provider.includes('id="btnMagicWand"'));
         assert.ok(styles.includes('.magic-wand-controls'));
         assert.ok(styles.includes('.magic-wand-shortcut-row'));
         assert.ok(styles.includes('display: none !important;'));

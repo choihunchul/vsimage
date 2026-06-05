@@ -14,7 +14,7 @@ suite('Tool rail logic', () => {
     test('defaults to cursor and resolves shortcut actions to the expected tools', () => {
         assert.strictEqual(logic.DEFAULT_ACTIVE_TOOL, 'cursor');
         assert.strictEqual(logic.resolveToolForShortcutAction('crop', 'cursor'), 'crop');
-        assert.strictEqual(logic.resolveToolForShortcutAction('marquee', 'crop'), 'cursor');
+        assert.strictEqual(logic.resolveToolForShortcutAction('marquee', 'crop'), 'marquee');
         assert.strictEqual(logic.resolveToolForShortcutAction('mosaic', 'cursor'), 'mosaic');
         assert.strictEqual(logic.resolveToolForShortcutAction('move', 'cursor'), 'move');
     });
@@ -27,8 +27,10 @@ suite('Tool rail logic', () => {
 
     test('toggles crop and marquee gating from the active tool', () => {
         assert.strictEqual(logic.shouldEnableCropForTool('crop'), true);
+        assert.strictEqual(logic.shouldEnableCropForTool('marquee'), true);
         assert.strictEqual(logic.shouldEnableCropForTool('cursor'), false);
+        assert.strictEqual(logic.shouldBlockMarqueeCreation('marquee'), false);
         assert.strictEqual(logic.shouldBlockMarqueeCreation('move'), true);
-        assert.strictEqual(logic.shouldBlockMarqueeCreation('cursor'), false);
+        assert.strictEqual(logic.shouldBlockMarqueeCreation('cursor'), true);
     });
 });

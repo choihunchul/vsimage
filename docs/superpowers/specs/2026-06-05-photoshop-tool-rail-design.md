@@ -11,10 +11,13 @@ The new interaction model should make the primary editing actions start from too
 We will use a `left tool rail + right context panel` layout.
 
 - A fixed vertical tool rail appears on the left side of the canvas workspace.
-- The rail contains five primary tools: `Select`, `Crop`, `Resize`, `Mosaic`, and `Move`.
+- The rail contains five primary tools: `Cursor`, `Crop`, `Resize`, `Mosaic`, and `Move`.
+- `Cursor` is the default pointer/selection state and acts as the visual home for non-tool editing.
 - The right sidebar stays in place, but it is simplified.
 - The existing dedicated `Resize` card and `Crop Presets` card are removed.
 - Tool-specific controls are shown in one shared `Tool Options` area in the right sidebar, based on the active tool.
+- Zoom-related controls move into the right sidebar's properties area instead of living in the bottom control bar.
+- `Rotate` and `Flip` move into the left rail as secondary actions so the bottom bar can stay focused on viewport controls.
 
 This keeps the interface closer to Photoshop while fitting the current extension architecture.
 
@@ -26,7 +29,7 @@ The left edge of the canvas workspace gains a narrow vertical icon bar.
 
 It contains:
 
-1. `Select`
+1. `Cursor`
 2. `Crop`
 3. `Resize`
 4. `Mosaic`
@@ -34,7 +37,7 @@ It contains:
 
 Only one tool is active at a time. The active tool has a clear highlighted state.
 
-The tool rail is part of the canvas workspace rather than the existing bottom floating toolbar. The bottom floating toolbar remains focused on viewport controls such as zoom, rotate, flip, and reset.
+The tool rail is part of the canvas workspace rather than the existing bottom floating toolbar. The bottom floating toolbar becomes a slimmer viewport-only area, while `Rotate` and `Flip` are presented as secondary actions in the tool rail.
 
 ### Right Sidebar
 
@@ -46,11 +49,13 @@ It keeps:
 - Selection information
 - History
 - Save / Export
+- Zoom readout and zoom buttons
 
 It loses:
 
 - The standalone `Resize` panel
 - The standalone `Crop Presets` panel
+- The bottom-bar zoom controls
 
 It gains:
 
@@ -58,9 +63,9 @@ It gains:
 
 ## Tool Behavior
 
-### Select
+### Cursor
 
-`Select` is the default editing tool for marquee-based selection.
+`Cursor` is the default editing tool for marquee-based selection.
 
 - It activates the existing selection behavior.
 - It works with the current selection info card.
@@ -102,13 +107,21 @@ It gains:
 - It does not need a large options form.
 - Space-drag remains available as a temporary pan shortcut even when another tool is active.
 
+### Rotate and Flip
+
+`Rotate` and `Flip` become secondary actions in the left rail.
+
+- They remain one-click destructive transform actions.
+- They no longer live in the bottom viewport toolbar.
+- Their placement keeps them close to the primary tool stack without making them part of the main mutually exclusive tool set.
+
 ## State Model
 
 Add a lightweight `activeTool` state in the webview UI layer.
 
 Supported values:
 
-- `select`
+- `cursor`
 - `crop`
 - `resize`
 - `mosaic`
@@ -116,8 +129,8 @@ Supported values:
 
 Default behavior:
 
-- When an image opens, the default active tool is `select`.
-- After `Apply Crop`, the editor returns to `select` because crop mode is no longer active.
+- When an image opens, the default active tool is `cursor`.
+- After `Apply Crop`, the editor returns to `cursor` because crop mode is no longer active.
 - After `Apply Resize` or mosaic apply, the current tool remains active so the user can repeat the action if needed.
 
 The goal is orchestration, not feature reimplementation.
@@ -135,6 +148,7 @@ Examples:
 - Switching away from `crop` disables crop-specific UI.
 - Switching to `move` enables pointer behavior that pans instead of starting marquee creation.
 - Switching to `resize` or `mosaic` only swaps the visible option controls and does not directly mutate the image until the user applies the action.
+- Switching to `cursor` returns the editor to the normal selection-oriented pointer state and hides tool-specific edit affordances.
 
 ## Implementation Approach
 
@@ -164,10 +178,12 @@ Expected areas of change:
   - style active tool icons
   - style the shared tool options area
   - adjust workspace spacing so the new rail feels native
+  - style the secondary rotate / flip actions in the rail
 - `media/editor.js`
   - introduce `activeTool`
   - toggle tool state and tool-specific UI
   - connect `move` to existing pan behavior
+  - keep `cursor` as the default non-editing state
   - preserve shortcuts and apply flows
 
 ## Interaction Rules
@@ -186,6 +202,7 @@ Expected areas of change:
 - `move` must not create accidental selections while dragging.
 - `resize` and `mosaic` must preserve current disabled/enabled button behavior.
 - If no image is loaded, the tool rail should remain hidden just like the current toolbar and sidebar behavior.
+- The zoom widgets should remain available in the properties panel even when the bottom toolbar is minimized.
 
 ## Testing Focus
 
@@ -195,19 +212,21 @@ Expected areas of change:
 - The correct `Tool Options` block appears for each tool.
 - `crop`, `resize`, and `mosaic` still apply the same image mutations as before.
 - `move` pans the canvas and blocks marquee creation while active.
-- Existing selection workflows still work after switching back to `select`.
+- Existing selection workflows still work after switching back to `cursor`.
 
 ### Shortcut Checks
 
 - `C` still toggles crop behavior correctly.
-- `M` still returns to marquee/select behavior.
+- `M` still returns to marquee/cursor behavior.
 - `X` still applies mosaic to the current selection as expected.
 - `Enter` still applies crop when crop is active.
 - Space-drag still pans even when another tool is selected.
+- Rotate and flip actions remain reachable from the left rail after the move.
 
 ### Regression Checks
 
 - Zoom/rotate/flip/reset toolbar remains functional.
+- Zoom controls continue to work after being moved into the properties panel.
 - Selection info remains accurate.
 - Save/export remains unaffected.
 - History still records destructive actions correctly.
@@ -225,7 +244,7 @@ Implement this as an incremental UI migration rather than a rewrite.
 
 The strongest version of the feature is:
 
-- left-side tool rail for primary actions
+- left-side tool rail for primary actions and secondary transform actions
 - existing bottom floating toolbar retained for viewport actions
 - right sidebar reduced to information, history, export, and context-sensitive tool options
 

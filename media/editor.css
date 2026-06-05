@@ -35,13 +35,14 @@ body, html {
 /* Layout: [corner][rulerH] / [rulerV][scrollable canvas]                    */
 :root {
     --ruler-size: 20px;
+    --tool-rail-width: 56px;
     --ruler-v-width: 44px;
 }
 
 .canvas-workspace {
     flex: 1;
     display: grid;
-    grid-template-columns: var(--ruler-v-width) 1fr;
+    grid-template-columns: var(--tool-rail-width) var(--ruler-v-width) 1fr;
     grid-template-rows:    var(--ruler-size) 1fr;
     overflow: hidden;
     min-height: 0;
@@ -50,19 +51,16 @@ body, html {
 
 /* The scrollable canvas viewport (bottom-right grid cell) */
 .canvas-scroll-area {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
     overflow: auto;
     position: relative;
     z-index: 1;
-    background-color: #0d0d0d;
-    background-image:
-        linear-gradient(45deg, #181818 25%, transparent 25%),
-        linear-gradient(-45deg, #181818 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #181818 75%),
-        linear-gradient(-45deg, transparent 75%, #181818 75%);
-    background-size: 20px 20px;
-    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color: #383838;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+        inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+        inset 0 0 24px rgba(0, 0, 0, 0.08);
     min-height: 0;
 }
 
@@ -91,8 +89,9 @@ body, html {
 .image-container .cropper-container {
     overflow: visible;
     box-shadow:
-        inset 0 0 0 1px rgba(0, 0, 0, 0.72),
-        inset 0 0 0 2px rgba(255, 255, 255, 0.38);
+        inset 0 0 0 1px rgba(0, 0, 0, 0.88),
+        inset 0 0 0 2px rgba(255, 255, 255, 0.56),
+        0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
 .image-container img {
@@ -206,7 +205,6 @@ body, html {
     }
 }
 
-#btnMagicWand,
 .magic-wand-controls,
 .magic-wand-shortcut-row {
     display: none !important;
@@ -222,63 +220,133 @@ body, html {
     cursor: crosshair !important;
 }
 
-/* Toolbar overlay — pinned to bottom of canvas viewport */
-.canvas-toolbar-layer {
-    position: absolute;
-    left: var(--ruler-v-width);
-    right: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 30;
+.tool-rail {
+    grid-column: 1;
+    grid-row: 1 / span 2;
     display: flex;
-    justify-content: center;
-    pointer-events: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 8px 12px;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, rgba(23, 23, 23, 0.99), rgba(16, 16, 16, 0.99));
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    z-index: 3;
 }
 
-/* Floating toolbar overlays the scroll viewport (does not scroll with image) */
-.floating-toolbar {
-    position: absolute;
-    left: 50%;
-    bottom: 20px;
-    transform: translateX(-50%);
-    pointer-events: auto;
-    background: rgba(30, 30, 30, 0.8);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    display: flex;
-    gap: 4px;
-    padding: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-}
-
-.toolbar-drag-handle {
-    appearance: none;
-    border: 1px solid rgba(77, 163, 224, 0.45);
-    background: rgba(0, 122, 204, 0.16);
-    color: var(--btn-bg, #4da3e0);
+.tool-rail-btn {
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    min-width: 30px;
     padding: 0;
-    margin: 0 4px 0 0;
-    border-radius: 6px;
-    cursor: move;
-    touch-action: none;
-    user-select: none;
-    pointer-events: auto;
-    flex: 0 0 30px;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(38, 38, 38, 0.92);
+    color: #d6d6d6;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.toolbar-drag-handle:hover {
-    background: rgba(0, 122, 204, 0.28);
-    border-color: rgba(77, 163, 224, 0.7);
+.tool-rail-btn:hover {
+    background: rgba(55, 55, 55, 0.96);
+    border-color: rgba(255, 255, 255, 0.16);
 }
 
-.toolbar-drag-icon,
+.tool-rail-btn.active {
+    background: linear-gradient(180deg, rgba(61, 136, 255, 0.96), rgba(38, 107, 219, 0.96));
+    color: #ffffff;
+    border-color: rgba(120, 177, 255, 0.95);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.tool-rail-btn:active {
+    transform: scale(0.98);
+}
+
+.tool-rail-icon {
+    width: 17px;
+    height: 17px;
+    display: block;
+    stroke: currentColor;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+}
+
+.tool-rail-icon-fill {
+    fill: currentColor;
+    stroke: none;
+}
+
+.tool-rail-icon-grid rect {
+    fill: currentColor;
+    stroke: none;
+}
+
+.tool-rail-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.tool-options-panel {
+    display: none;
+}
+
+.tool-options-panel.active {
+    display: block;
+}
+
+.section-card-tool-options {
+    position: relative;
+}
+
+.tool-options-note {
+    margin: 0;
+    color: #b7b7b7;
+}
+
+.tool-rail-secondary {
+    width: 34px;
+    height: 34px;
+    margin-top: 4px;
+    background: rgba(32, 32, 32, 0.94);
+    opacity: 0.92;
+}
+
+.tool-rail-secondary:hover {
+    background: rgba(44, 44, 44, 0.98);
+}
+
+.tool-rail-secondary.active {
+    background: linear-gradient(180deg, rgba(61, 136, 255, 0.96), rgba(38, 107, 219, 0.96));
+}
+
+.properties-zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.properties-zoom-row .tb-btn {
+    min-width: 38px;
+}
+
+.properties-zoom-row #btnReset {
+    min-width: 104px;
+}
+
 .zoom-loupe-drag-icon {
     width: 16px;
     height: 16px;
@@ -762,6 +830,35 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
     accent-color: var(--btn-bg);
 }
 
+.resize-scale-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.resize-scale-row > label {
+    margin-bottom: 0;
+}
+
+.resize-lock-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.resize-lock-row input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.resize-lock-row label {
+    margin-bottom: 0;
+    font-size: 0.75rem;
+    user-select: none;
+}
+
 /* Empty dashboard state */
 .dashboard-empty {
     display: flex;
@@ -821,15 +918,6 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
     align-items: center;
     justify-content: center;
     user-select: none;
-}
-
-/* Toolbar Divider */
-.tb-divider {
-    width: 1px;
-    background-color: rgba(255, 255, 255, 0.15);
-    height: 20px;
-    align-self: center;
-    margin: 0 6px;
 }
 
 /* Disabled secondary button styling */
@@ -1372,7 +1460,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 
 /* ── Rulers (grid cells) ─────────────────────────────────── */
 .ruler-corner {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
     background: #1a1a1a !important;
     border-right: 1px solid #333;
@@ -1389,7 +1477,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 }
 
 .ruler-h {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     width: 100%;
     height: var(--ruler-size);
@@ -1397,7 +1485,7 @@ body.show-shortcut-hints .context-menu-item[data-shortcut]:hover .context-menu-s
 }
 
 .ruler-v {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 2;
     width: var(--ruler-v-width);
     height: 100%;

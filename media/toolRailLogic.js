@@ -2,13 +2,17 @@
 
 const DEFAULT_ACTIVE_TOOL = 'cursor';
 
+function normalizeTool(tool) {
+    return tool || DEFAULT_ACTIVE_TOOL;
+}
+
 function resolveToolForShortcutAction(action, currentTool) {
     if (action === 'crop') {
         return 'crop';
     }
 
     if (action === 'marquee') {
-        return 'cursor';
+        return 'marquee';
     }
 
     if (action === 'mosaic') {
@@ -19,7 +23,7 @@ function resolveToolForShortcutAction(action, currentTool) {
         return 'move';
     }
 
-    return currentTool || DEFAULT_ACTIVE_TOOL;
+    return normalizeTool(currentTool);
 }
 
 function resolveToolAfterApply(tool, applyKind) {
@@ -35,21 +39,29 @@ function resolveToolAfterApply(tool, applyKind) {
         return 'mosaic';
     }
 
-    return tool || DEFAULT_ACTIVE_TOOL;
+    return normalizeTool(tool);
 }
 
 function shouldEnableCropForTool(tool) {
-    return tool === 'crop';
+    const activeTool = normalizeTool(tool);
+    return activeTool === 'crop' || activeTool === 'marquee';
 }
 
 function shouldBlockMarqueeCreation(tool) {
-    return tool === 'move';
+    const activeTool = normalizeTool(tool);
+    return activeTool !== 'crop' && activeTool !== 'marquee';
 }
 
-module.exports = {
+const api = {
     DEFAULT_ACTIVE_TOOL,
     resolveToolForShortcutAction,
     resolveToolAfterApply,
     shouldEnableCropForTool,
     shouldBlockMarqueeCreation
 };
+
+globalThis.VsimageToolRailLogic = api;
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+}
