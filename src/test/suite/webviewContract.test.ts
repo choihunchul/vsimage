@@ -122,9 +122,15 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('id="toolOptionsResize"'));
         assert.ok(provider.includes('id="toolOptionsMosaic"'));
         assert.ok(provider.includes('id="toolOptionsMove"'));
+        assert.ok(provider.includes('id="rngMosaicSize"'));
+        assert.ok(provider.includes('id="btnMosaicConfirm"'));
+        assert.ok(provider.includes('id="btnMosaicCancel"'));
         assert.ok(provider.includes('properties-zoom-row'));
         assert.ok(provider.includes('toolbar.cursor'));
         assert.ok(provider.includes('toolbar.marqueeSelect'));
+        assert.ok(provider.includes('sidebar.mosaicSize'));
+        assert.ok(provider.includes('sidebar.mosaicCancel'));
+        assert.ok(provider.includes('sidebar.mosaicConfirm'));
         assert.ok(styles.includes('.tool-rail'));
         assert.ok(styles.includes('.tool-rail-btn.active'));
         assert.ok(styles.includes('.tool-rail-secondary'));
@@ -244,8 +250,7 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('mosaicLogicUri'));
         assert.ok(provider.includes('btnApplyMosaic'));
         assert.ok(provider.includes('sidebar.applyMosaic'));
-        assert.ok(provider.includes('mosaicModal'));
-        assert.ok(provider.includes('rngMosaicSize'));
+        assert.ok(provider.includes('sidebar.mosaicHint'));
         assert.ok(provider.includes('btnMosaicConfirm'));
         assert.ok(provider.includes('btnMosaicCancel'));
         assert.ok(editor.includes('const mosaicLogic = globalThis.VsimageMosaicLogic || {'));
@@ -261,6 +266,7 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("if (shortcutAction === 'mosaic') {"));
         assert.ok(editor.includes("setActiveTool('mosaic');"));
         assert.ok(provider.includes('shortcuts.mosaicSelection'));
+        assert.ok(!provider.includes('id="mosaicModal"'));
     });
 
     test('hides the magic wand UI while leaving the feature wiring dormant', () => {

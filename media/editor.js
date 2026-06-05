@@ -291,6 +291,8 @@
     const rngSharpen = document.getElementById('rngSharpen');
     const btnApplyCrop = document.getElementById('btnApplyCrop');
     const btnApplyMosaic = document.getElementById('btnApplyMosaic');
+    const btnMosaicCancel = document.getElementById('btnMosaicCancel');
+    const btnMosaicConfirm = document.getElementById('btnMosaicConfirm');
     const btnReset = document.getElementById('btnReset');
     const lblResetText = document.getElementById('lblResetText');
 
@@ -373,11 +375,6 @@
     const copyQualitySection = document.getElementById('copyQualitySection');
     const rngCopyQuality = document.getElementById('rngCopyQuality');
     const btnCopyConfirm = document.getElementById('btnCopyConfirm');
-    const mosaicModal = document.getElementById('mosaicModal');
-    const mosaicModalBackdrop = document.getElementById('mosaicModalBackdrop');
-    const mosaicModalClose = document.getElementById('mosaicModalClose');
-    const btnMosaicCancel = document.getElementById('btnMosaicCancel');
-    const btnMosaicConfirm = document.getElementById('btnMosaicConfirm');
     const rngMosaicSize = document.getElementById('rngMosaicSize');
     const mosaicSizeVal = document.getElementById('mosaicSizeVal');
     const marqueeShortcutTooltip = document.getElementById('marqueeShortcutTooltip');
@@ -769,7 +766,7 @@
         if (marqueeGestureState) {
             return;
         }
-        if (mosaicModal && mosaicModal.style.display === 'flex') {
+        if (mosaicPreviewState) {
             cropper.setDragMode('none');
             return;
         }
@@ -1525,7 +1522,7 @@
 
         drawRulers();
         renderMagicWandOverlay();
-        if (mosaicModal && mosaicModal.style.display === 'flex') {
+        if (mosaicPreviewState) {
             scheduleMosaicPreviewRender();
         }
         updateZoomToggleButton();
@@ -2689,7 +2686,7 @@
                     updateResizeInputsFromCrop();
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
-                    if (mosaicModal && mosaicModal.style.display === 'flex') {
+                    if (mosaicPreviewState) {
                         scheduleMosaicPreviewRender();
                     }
                 },
@@ -2700,7 +2697,7 @@
                     updateResizeInputsFromCrop();
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
-                    if (mosaicModal && mosaicModal.style.display === 'flex') {
+                    if (mosaicPreviewState) {
                         scheduleMosaicPreviewRender();
                     }
                 },
@@ -2708,7 +2705,7 @@
                     updateZoomIndicator();
                     requestAnimationFrame(() => {
                         renderMagicWandOverlay();
-                        if (mosaicModal && mosaicModal.style.display === 'flex') {
+                        if (mosaicPreviewState) {
                             scheduleMosaicPreviewRender();
                         }
                     });
@@ -3824,9 +3821,6 @@
     }
 
     function hideMosaicModal() {
-        if (mosaicModal) {
-            mosaicModal.style.display = 'none';
-        }
         mosaicPreviewState = null;
         hideMarqueeShortcutTooltip();
         hideMosaicPreview();
@@ -3848,14 +3842,8 @@
             blockSize: setMosaicBlockSize(rngMosaicSize ? rngMosaicSize.value : MOSAIC_DEFAULT_BLOCK_SIZE)
         };
 
-        if (mosaicModal) {
-            mosaicModal.style.display = 'flex';
-        }
         updateCropInteraction();
         scheduleMosaicPreviewRender();
-        if (btnMosaicConfirm) {
-            btnMosaicConfirm.focus();
-        }
         return true;
     }
 
@@ -3934,12 +3922,6 @@
     }
     if (btnMosaicCancel) {
         btnMosaicCancel.addEventListener('click', hideMosaicModal);
-    }
-    if (mosaicModalClose) {
-        mosaicModalClose.addEventListener('click', hideMosaicModal);
-    }
-    if (mosaicModalBackdrop) {
-        mosaicModalBackdrop.addEventListener('click', hideMosaicModal);
     }
 
     // ── Color Picker (Photoshop I key) ─────────────────────────────────────
@@ -4573,7 +4555,7 @@
 
     workspace.addEventListener('mousemove', (e) => {
         const onMarqueeFace = !!(cropper && chkEnableCrop.checked && cropper.cropped && !marqueeGestureState
-            && !(mosaicModal && mosaicModal.style.display === 'flex')
+            && !mosaicPreviewState
             && !(copyModal && copyModal.style.display === 'flex')
             && !(colorModal && colorModal.style.display === 'flex')
             && e.target.closest('.cropper-face')
@@ -4900,7 +4882,7 @@
 
     // Global keyboard listener
     document.addEventListener('keydown', (e) => {
-        if (mosaicModal && mosaicModal.style.display === 'flex') {
+        if (mosaicPreviewState) {
             if (e.key === 'Escape') {
                 e.preventDefault();
                 hideMosaicModal();
@@ -4979,7 +4961,7 @@
                 setZLoupeActive(false);
                 return;
             }
-            if (mosaicModal && mosaicModal.style.display === 'flex') {
+            if (mosaicPreviewState) {
                 hideMosaicModal();
                 return;
             }
@@ -5049,7 +5031,7 @@
 
         // Enter: apply crop selection if crop mode is active
         if (e.key === 'Enter') {
-            if (mosaicModal && mosaicModal.style.display === 'flex') {
+            if (mosaicPreviewState) {
                 e.preventDefault();
                 commitMosaicSelection();
                 return;

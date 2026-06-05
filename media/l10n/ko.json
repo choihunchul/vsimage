@@ -47,6 +47,10 @@
   "sidebar.applyResize": "크기 적용",
   "sidebar.sharpen": "선명도",
   "sidebar.sharpenHint": "크기 적용 후 조정합니다. 0%면 리사이즈 직후 상태입니다.",
+  "sidebar.mosaicSize": "픽셀 크기",
+  "sidebar.mosaicHint": "모자이크를 적용하기 전에 여기서 블록 크기를 조절하세요.",
+  "sidebar.mosaicCancel": "취소",
+  "sidebar.mosaicConfirm": "모자이크 적용",
   "sidebar.saveExport": "💾 저장 및 내보내기",
   "sidebar.exportFormat": "내보내기 형식",
   "sidebar.quality": "품질",
@@ -82,8 +86,7 @@
 
   "mosaicModal.title": "영역 모자이크",
   "mosaicModal.close": "닫기",
-  "mosaicModal.hint": "슬라이더를 움직이면 모자이크 크기가 실시간으로 미리보기 됩니다.",
-  "mosaicModal.size": "블록 크기",
+  "mosaicModal.hint": "여기서는 미리보기만 확인하고, 적용은 확인 버튼으로 합니다.",
   "mosaicModal.cancel": "취소",
   "mosaicModal.confirm": "모자이크 적용",
 
