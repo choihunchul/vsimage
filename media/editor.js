@@ -2649,6 +2649,15 @@
                     focusCropKeyboardTarget();
                 },
                 cropmove() {
+                    const data = cropper.getData(true);
+                    const clamped = clampCropBox(data.x, data.y, data.width, data.height);
+                    if (clamped.x !== data.x
+                        || clamped.y !== data.y
+                        || clamped.width !== data.width
+                        || clamped.height !== data.height) {
+                        cropper.setData(clamped);
+                        return;
+                    }
                     updateResizeInputsFromCrop();
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();

@@ -95,7 +95,7 @@ suite('Webview contracts', () => {
         const saveIndex = provider.indexOf('section-card-save');
 
         assert.ok(provider.includes('sidebar.fileSize'));
-        assert.ok(provider.includes('chkAutoCollapse'));
+        assert.ok(provider.includes('btnSidebarAutoCollapse'));
         assert.ok(propertiesIndex >= 0);
         assert.ok(resizeIndex >= 0);
         assert.ok(historyIndex >= 0);
@@ -139,6 +139,11 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("workspace.addEventListener('mousedown'"));
         assert.ok(editor.includes('resolveDragMarqueeBox'));
         assert.ok(editor.includes('cropper.setData(nextBox)'));
+    });
+
+    test('re-clamps marquee moves so the selection stays inside the image canvas', () => {
+        assert.ok(editor.includes('const clamped = clampCropBox(data.x, data.y, data.width, data.height);'));
+        assert.ok(editor.includes('cropper.setData(clamped);'));
     });
 
     test('keeps the collapsed sidebar strip wired for hover reopen', () => {

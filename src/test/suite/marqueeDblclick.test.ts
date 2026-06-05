@@ -199,6 +199,11 @@ suite('Marquee double-click logic', () => {
         assert.strictEqual(clamped.height, OH);
     });
 
+    test('clampCropBox keeps existing marquee inside the right and bottom edges', () => {
+        const clamped = logic.clampCropBox(850, 700, 200, 140, OW, OH);
+        assert.deepStrictEqual(clamped, { x: 800, y: 660, width: 200, height: 140 });
+    });
+
     test('shouldInvokeImageZoomDblClick when no marquee or outside selection', () => {
         const canvasState = { ...baseState, cropEnabled: false, cropped: false };
         assert.strictEqual(
