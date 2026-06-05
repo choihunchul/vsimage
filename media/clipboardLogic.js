@@ -27,7 +27,17 @@ function resolveSelectionOnly(hasSelection, savedScope) {
     return false;
 }
 
-const api = { shouldShowQuality, resolveCopyFormat, resolveCopyQuality, resolveSelectionOnly };
+function canWriteClipboardImage(clipboardWrite, clipboardItemCtor) {
+    return typeof clipboardWrite === 'function' && typeof clipboardItemCtor === 'function';
+}
+
+const api = {
+    shouldShowQuality,
+    resolveCopyFormat,
+    resolveCopyQuality,
+    resolveSelectionOnly,
+    canWriteClipboardImage
+};
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

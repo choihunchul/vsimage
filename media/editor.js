@@ -2755,6 +2755,7 @@
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
                     if (mosaicPreviewState) {
+                        mosaicPreviewState.cropData = cropper.getData(true);
                         scheduleMosaicPreviewRender();
                     }
                 },
@@ -2766,6 +2767,7 @@
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
                     if (mosaicPreviewState) {
+                        mosaicPreviewState.cropData = cropper.getData(true);
                         scheduleMosaicPreviewRender();
                     }
                 },
@@ -3784,32 +3786,76 @@
         sessionStorage.setItem(COPY_QUALITY_STORAGE_KEY, String(qualityPercent));
         sessionStorage.setItem(COPY_SCOPE_STORAGE_KEY, useSelection ? 'selection' : 'full');
 
-        window.editorApi.getCanvasBlob((blob) => {
-            if (!blob) {
-                vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
-                return;
+        function getCopySuccessToastText() {
+            if (useSelection) {
+                const data = cropper.getData(true);
+                return t('toast.imageCopiedSelection', {
+                    format: getCopyFormatLabel(format),
+                    width: String(Math.round(data.width)),
+                    height: String(Math.round(data.height))
+                });
             }
+            return t('toast.imageCopiedAs', { format: getCopyFormatLabel(format) });
+        }
 
-            navigator.clipboard.write([
-                new ClipboardItem({
-                    [blob.type]: blob
-                })
-            ]).then(() => {
+        function requestHostClipboardCopy(blob, successText) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                vscode.postMessage({
+                    command: 'copy-image',
+                    arrayBuffer: reader.result,
+                    mimeType: blob.type,
+                    successText
+                });
                 hideCopyModal();
-                let toastText = t('toast.imageCopiedAs', { format: getCopyFormatLabel(format) });
-                if (useSelection) {
-                    const data = cropper.getData(true);
-                    toastText = t('toast.imageCopiedSelection', {
-                        format: getCopyFormatLabel(format),
-                        width: String(Math.round(data.width)),
-                        height: String(Math.round(data.height))
-                    });
+            };
+            reader.onerror = () => {
+                vscode.postMessage({
+                    command: 'show-toast',
+                    text: t('toast.clipboardFailed', { error: String(reader.error || 'FileReader failed') })
+                });
+            };
+            reader.readAsArrayBuffer(blob);
+        }
+
+        if (!window.editorApi || !window.editorApi.getCanvasBlob) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
+            return;
+        }
+
+        try {
+            window.editorApi.getCanvasBlob((blob) => {
+                if (!blob) {
+                    vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
+                    return;
                 }
-                vscode.postMessage({ command: 'show-toast', text: toastText });
-            }).catch((err) => {
-                vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardFailed', { error: String(err) }) });
-            });
+
+                const toastText = getCopySuccessToastText();
+                const clipboard = navigator.clipboard;
+                const ClipboardItemCtor = window.ClipboardItem;
+                if (!clipboardLogic.canWriteClipboardImage(clipboard && clipboard.write, ClipboardItemCtor)) {
+                    requestHostClipboardCopy(blob, toastText);
+                    return;
+                }
+
+                try {
+                    clipboard.write([
+                        new ClipboardItemCtor({
+                        [blob.type]: blob
+                    })
+                ]).then(() => {
+                    hideCopyModal();
+                    vscode.postMessage({ command: 'show-toast', text: toastText });
+                }).catch((err) => {
+                    requestHostClipboardCopy(blob, toastText);
+                });
+            } catch (err) {
+                requestHostClipboardCopy(blob, toastText);
+            }
         }, { format, quality, copySelectionOnly: useSelection });
+        } catch (err) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardFailed', { error: String(err) }) });
+        }
     }
 
     function confirmCopyToClipboard() {
@@ -3823,6 +3869,12 @@
     function ensureMosaicPreviewCanvas() {
         if (!mosaicPreviewCanvas) {
             mosaicPreviewCanvas = document.getElementById('mosaicPreviewCanvas');
+        }
+        if (mosaicPreviewCanvas && cropper && cropper.cropper) {
+            const cropperCanvasHost = cropper.cropper.querySelector('.cropper-canvas');
+            if (cropperCanvasHost && mosaicPreviewCanvas.parentElement !== cropperCanvasHost) {
+                cropperCanvasHost.appendChild(mosaicPreviewCanvas);
+            }
         }
         if (mosaicPreviewCanvas && !mosaicPreviewCtx) {
             mosaicPreviewCtx = mosaicPreviewCanvas.getContext('2d');
@@ -3901,7 +3953,7 @@
         mosaicLogic.applyMosaicToCanvas(
             mosaicPreviewSourceCanvas,
             mosaicPreviewState.cropData,
-            getMosaicBlockSize()
+            mosaicPreviewState.blockSize
         );
 
         const ctx = mosaicPreviewCtx;
@@ -3975,6 +4027,7 @@
         const newSrc = canvas.toDataURL();
         replaceEditorImageSrc(newSrc);
         hideMosaicModal();
+        setActiveTool('cursor');
         updateSelectionPanelFromCrop();
         cacheNaturalCropData();
         notifyDocumentChanged('edit.mosaic');
@@ -3985,9 +4038,15 @@
     // Clipboard Copy Engine
     function copyImageToClipboard() {
         if (!cropper) {
+            vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
             return;
         }
-        showCopyModal();
+        const format = clipboardLogic.resolveCopyFormat(sessionStorage.getItem(COPY_FORMAT_STORAGE_KEY) || selectedCopyFormat);
+        const savedQuality = sessionStorage.getItem(COPY_QUALITY_STORAGE_KEY);
+        const qualityPercent = clipboardLogic.resolveCopyQuality(savedQuality, parseInt(rngQuality.value, 10));
+        const savedScope = sessionStorage.getItem(COPY_SCOPE_STORAGE_KEY);
+        const selectionOnly = clipboardLogic.resolveSelectionOnly(hasActiveCopySelection(), savedScope);
+        performCopyToClipboard(format, qualityPercent, selectionOnly);
     }
 
     if (copyFormatOptions) {

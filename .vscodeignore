@@ -5,6 +5,8 @@ out/**
 node_modules/**
 .git/**
 .github/**
+.worktrees/**
+.DS_Store
 *.map
 webpack.config.js
 tsconfig.json

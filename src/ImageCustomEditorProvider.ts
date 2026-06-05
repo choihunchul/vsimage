@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import { execFile } from 'child_process';
+import * as os from 'os';
 import * as path from 'path';
 import { loadMessageBundle, loadPackageNls, resolveLanguageId, t as translate } from './l10n';
 
@@ -163,6 +165,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     return;
                 case 'image-data-response':
                     this.resolveImageDataRequest(message.requestId, message.arrayBuffer, message.mimeType);
+                    return;
+                case 'copy-image':
+                    await this.copyImageToClipboard(message.arrayBuffer, message.mimeType, message.successText);
                     return;
                 case 'undo-request':
                     await vscode.commands.executeCommand('undo');
@@ -388,6 +393,57 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             buffer: new Uint8Array(arrayBuffer),
             mimeType: mimeType || 'image/png'
         });
+    }
+
+    private execFileAsync(command: string, args: string[]): Promise<void> {
+        return new Promise((resolve, reject) => {
+            execFile(command, args, error => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve();
+            });
+        });
+    }
+
+    private async copyImageToClipboard(
+        arrayBuffer: ArrayBuffer | null | undefined,
+        mimeType: string,
+        successText?: string
+    ): Promise<void> {
+        if (!arrayBuffer) {
+            vscode.window.showErrorMessage(translate(this.webviewL10n(), 'toast.noImageCopy'));
+            return;
+        }
+
+        if (process.platform !== 'darwin') {
+            vscode.window.showErrorMessage(translate(this.webviewL10n(), 'toast.clipboardUnavailable'));
+            return;
+        }
+
+        const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const sourcePath = path.join(os.tmpdir(), `vsimage-copy-${id}.${extension}`);
+        const tiffPath = path.join(os.tmpdir(), `vsimage-copy-${id}.tiff`);
+
+        try {
+            await fs.promises.writeFile(sourcePath, Buffer.from(new Uint8Array(arrayBuffer)));
+            await this.execFileAsync('sips', ['-s', 'format', 'tiff', sourcePath, '--out', tiffPath]);
+            const escapedPath = tiffPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            await this.execFileAsync('osascript', [
+                '-e',
+                `set the clipboard to (read (POSIX file "${escapedPath}") as TIFF picture)`
+            ]);
+            vscode.window.showInformationMessage(successText || translate(this.webviewL10n(), 'toast.imageCopied'));
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                translate(this.webviewL10n(), 'toast.clipboardFailed', { error: String(error) })
+            );
+        } finally {
+            await fs.promises.unlink(sourcePath).catch(() => undefined);
+            await fs.promises.unlink(tiffPath).catch(() => undefined);
+        }
     }
 
     private async promptImageSaveLocation(): Promise<vscode.Uri | undefined> {

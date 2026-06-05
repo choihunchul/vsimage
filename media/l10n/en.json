@@ -132,6 +132,7 @@
   "toast.cropInactive": "Crop mode disabled.",
   "toast.marqueeActive": "Marquee selection enabled.",
   "toast.noImageCopy": "No image data to copy",
+  "toast.clipboardUnavailable": "Image clipboard copy is not available in this environment.",
   "toast.imageCopied": "Image copied to clipboard!",
   "toast.imageCopiedAs": "Image copied as {format}!",
   "toast.imageCopiedSelection": "{format} copied ({width}×{height})",

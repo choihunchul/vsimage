@@ -85,6 +85,29 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('const saveExportLogic = globalThis.VsimageSaveExportLogic || {'));
     });
 
+    test('guards image clipboard writes and always routes copy outcomes through toasts', () => {
+        assert.ok(editor.includes("function copyImageToClipboard() {\n        if (!cropper) {\n            vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });"));
+        assert.ok(editor.includes('performCopyToClipboard(format, qualityPercent, selectionOnly);'));
+        assert.ok(!editor.includes("function copyImageToClipboard() {\n        if (!cropper) {\n            return;\n        }\n        showCopyModal();"));
+        assert.ok(editor.includes('const clipboard = navigator.clipboard;'));
+        assert.ok(editor.includes('const ClipboardItemCtor = window.ClipboardItem;'));
+        assert.ok(editor.includes("if (!clipboardLogic.canWriteClipboardImage(clipboard && clipboard.write, ClipboardItemCtor)) {"));
+        assert.ok(provider.includes("translate(this.webviewL10n(), 'toast.clipboardUnavailable')"));
+        assert.ok(editor.includes('try {'));
+        assert.ok(editor.includes('clipboard.write(['));
+        assert.ok(editor.includes('new ClipboardItemCtor({'));
+        assert.ok(editor.includes('requestHostClipboardCopy(blob, toastText);'));
+        assert.ok(editor.includes("command: 'copy-image'"));
+        assert.ok(provider.includes("case 'copy-image':"));
+        assert.ok(provider.includes('copyImageToClipboard(message.arrayBuffer, message.mimeType, message.successText)'));
+        assert.ok(provider.includes("this.execFileAsync('sips'"));
+        assert.ok(provider.includes("this.execFileAsync('osascript'"));
+        assert.ok(editor.includes("t('toast.imageCopiedAs'"));
+        assert.ok(editor.includes("t('toast.imageCopiedSelection'"));
+        assert.ok(editor.includes("t('toast.clipboardFailed', { error: String(err) })"));
+        assert.ok(editor.includes('} catch (err) {'));
+    });
+
     test('shows the extension version next to the properties title', () => {
         assert.ok(provider.includes('section-title-with-version'));
         assert.ok(provider.includes('section-title-version'));
@@ -323,6 +346,23 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes("setActiveTool('mosaic', { keepCropEnabled: true });"));
         assert.ok(provider.includes('shortcuts.mosaicSelection'));
         assert.ok(!provider.includes('id="mosaicModal"'));
+    });
+
+    test('returns to the cursor tool after applying mosaic', () => {
+        assert.ok(editor.includes("hideMosaicModal();\n        setActiveTool('cursor');"));
+        assert.ok(editor.includes("vscode.postMessage({ command: 'show-toast', text: t('toast.mosaicApplied') });"));
+    });
+
+    test('keeps mosaic slider preview synced to the live marquee and slider value', () => {
+        assert.ok(editor.includes("const cropperCanvasHost = cropper.cropper.querySelector('.cropper-canvas');"));
+        assert.ok(editor.includes('cropperCanvasHost.appendChild(mosaicPreviewCanvas);'));
+        assert.ok(editor.includes('mosaicPreviewState.cropData = cropper.getData(true);'));
+        assert.ok(editor.includes('mosaicLogic.applyMosaicToCanvas('));
+        assert.ok(editor.includes('mosaicPreviewState.cropData,'));
+        assert.ok(editor.includes('mosaicPreviewState.blockSize'));
+        assert.ok(editor.includes("rngMosaicSize.addEventListener('input', () => {"));
+        assert.ok(editor.includes('mosaicPreviewState.blockSize = size;'));
+        assert.ok(editor.includes('scheduleMosaicPreviewRender();'));
     });
 
     test('hides the magic wand UI while leaving the feature wiring dormant', () => {

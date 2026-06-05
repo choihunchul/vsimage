@@ -7,6 +7,7 @@ const logic = require(path.join(__dirname, '../../../../media/clipboardLogic.js'
     resolveCopyFormat: (format: string | null) => string;
     resolveCopyQuality: (value: string | null, fallback: number) => number;
     resolveSelectionOnly: (hasSelection: boolean, savedScope: string | null) => boolean;
+    canWriteClipboardImage: (clipboardWrite: unknown, clipboardItemCtor: unknown) => boolean;
 };
 
 suite('Clipboard logic', () => {
@@ -34,5 +35,11 @@ suite('Clipboard logic', () => {
         assert.strictEqual(logic.resolveSelectionOnly(true, null), true);
         assert.strictEqual(logic.resolveSelectionOnly(false, 'selection'), false);
         assert.strictEqual(logic.resolveSelectionOnly(false, 'full'), false);
+    });
+
+    test('requires both clipboard.write and ClipboardItem for image copy', () => {
+        assert.strictEqual(logic.canWriteClipboardImage(() => undefined, function ClipboardItem() {}), true);
+        assert.strictEqual(logic.canWriteClipboardImage(null, function ClipboardItem() {}), false);
+        assert.strictEqual(logic.canWriteClipboardImage(() => undefined, null), false);
     });
 });
