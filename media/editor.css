@@ -23,6 +23,37 @@ body, html {
     overflow: hidden;
 }
 
+.editor-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(12px);
+    max-width: min(92vw, 420px);
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(24, 24, 24, 0.94);
+    color: #f3f3f3;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    font-size: 0.85rem;
+    line-height: 1.35;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+    z-index: 25000;
+}
+
+.editor-toast.is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.editor-toast.is-error {
+    border-color: rgba(255, 120, 120, 0.45);
+    color: #ffd7d7;
+}
+
 .webview-loading-overlay {
     position: fixed;
     inset: 0;
@@ -99,6 +130,26 @@ body, html {
     --ruler-v-width: 20px;
 }
 
+.canvas-workspace.selection-move-tool {
+    cursor: move;
+}
+
+.canvas-workspace.selection-move-tool .cropper-face {
+    cursor: move;
+}
+
+.canvas-workspace.implicit-full-image-move .image-container,
+.canvas-workspace.implicit-full-image-move .cropper-container,
+.canvas-workspace.implicit-full-image-move .cropper-canvas {
+    cursor: move;
+}
+
+.tool-options-note-secondary {
+    margin-top: 6px;
+    opacity: 0.82;
+    font-size: 0.82rem;
+}
+
 .canvas-workspace {
     flex: 1;
     display: grid;
@@ -168,7 +219,8 @@ body, html {
     max-height: none;
 }
 
-.mosaic-preview-canvas {
+.mosaic-preview-canvas,
+.pixel-move-preview-canvas {
     position: absolute;
     top: 0;
     left: 0;
@@ -725,6 +777,7 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
 .section-title-with-version {
     display: flex;
     align-items: baseline;
+    flex-wrap: wrap;
     gap: 6px;
 }
 
@@ -734,6 +787,8 @@ body.show-shortcut-hints [data-shortcut] .ui-shortcut-badge {
     font-size: 0.72em;
     font-weight: 600;
     color: #9a9a9a;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.35;
 }
 
 .section-card-save {

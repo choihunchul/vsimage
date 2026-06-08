@@ -49,10 +49,26 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         showToastCount: 0,
         lastToastText: '',
         lastShortcutAction: '',
-        lastShortcutDocumentKey: ''
+        lastShortcutDocumentKey: '',
+        lastCopyError: '',
+        lastCopyPayloadKind: '',
+        lastActiveTool: '',
+        selectionMoveActive: false,
+        cropEnabled: false,
+        cropped: false,
+        cropWidth: 0,
+        cropHeight: 0
     };
+    private readonly outputChannel: vscode.OutputChannel;
 
-    constructor(private readonly context: vscode.ExtensionContext) {}
+    constructor(private readonly context: vscode.ExtensionContext) {
+        this.outputChannel = vscode.window.createOutputChannel('vsimage');
+        context.subscriptions.push(this.outputChannel);
+    }
+
+    private logCopy(line: string): void {
+        this.outputChannel.appendLine(`[copy] ${line}`);
+    }
 
     private isUntitledDocument(document: vscode.CustomDocument): boolean {
         return document.uri.scheme === 'untitled';
@@ -71,6 +87,24 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         } catch {
             return '';
         }
+    }
+
+    private getPropertiesVersionLabel(): string {
+        const version = this.getExtensionVersionLabel();
+        if (this.context.extensionMode !== vscode.ExtensionMode.Development) {
+            return version;
+        }
+
+        const buildTime = typeof __VSIMAGE_BUILD_TIME__ !== 'undefined'
+            ? String(__VSIMAGE_BUILD_TIME__).trim()
+            : '';
+        if (!version && !buildTime) {
+            return '';
+        }
+        if (!buildTime) {
+            return version;
+        }
+        return version ? `${version} · ${buildTime}` : buildTime;
     }
 
     private webviewL10n() {
@@ -165,10 +199,15 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             vscode.window.showErrorMessage(translate(this.packageNls(), 'toast.openImageFailed'));
         }
 
+        const initialFileMimeType = isUntitled
+            ? 'image/png'
+            : this.getMimeTypeForUri(document.uri);
+
         webviewPanel.webview.html = this.getHtmlForWebview(
             webviewPanel.webview,
             initialImageSrc,
             initialImage?.fileSizeBytes,
+            initialFileMimeType,
             true,
             isUntitled ? path.basename(document.uri.fsPath) : undefined
         );
@@ -195,25 +234,37 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                     return;
                 case 'copy-image':
                     this.debugState.copyImageMessageCount += 1;
-                    await this.copyImageMessageToClipboard(message, message.successText);
+                    this.logCopy(`webview copy-image (hasArrayBuffer=${Boolean(message.arrayBuffer)}, hasDataUrl=${typeof message.dataUrl === 'string'})`);
+                    void this.handleCopyImageMessage(message, webviewPanel);
                     return;
                 case 'copy-function-enter':
                     this.debugState.copyFunctionEnterCount += 1;
+                    this.logCopy('webview copy-function-enter');
                     return;
                 case 'host-clipboard-request':
                     this.debugState.hostClipboardRequestCount += 1;
+                    this.logCopy('webview host-clipboard-request');
+                    return;
+                case 'copy-debug':
+                    this.logCopy(`webview: ${String(message.text ?? '')}`);
                     return;
                 case 'shortcut-ack':
                     this.debugState.shortcutAckCount += 1;
                     this.debugState.lastShortcutAction = String(message.action ?? '');
                     return;
+                case 'tool-state':
+                    this.debugState.lastActiveTool = String(message.activeTool ?? '');
+                    this.debugState.selectionMoveActive = Boolean(message.selectionMoveActive);
+                    this.debugState.cropEnabled = Boolean(message.cropEnabled);
+                    this.debugState.cropped = Boolean(message.cropped);
+                    this.debugState.cropWidth = Number(message.cropWidth) || 0;
+                    this.debugState.cropHeight = Number(message.cropHeight) || 0;
+                    return;
                 case 'undo-request':
                     await vscode.commands.executeCommand('undo');
                     return;
                 case 'show-toast':
-                    this.debugState.showToastCount += 1;
-                    this.debugState.lastToastText = String(message.text ?? '');
-                    vscode.window.showInformationMessage(message.text);
+                    this.showToastMessage(message.text);
                     return;
             }
         });
@@ -240,7 +291,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             this.getDocumentMimeType(document)
         );
         await vscode.workspace.fs.writeFile(document.uri, buffer);
-        this.markDocumentSaved(document, panel, buffer.byteLength);
+        this.markDocumentSaved(document, panel, buffer.byteLength, this.getDocumentMimeType(document));
     }
 
     async saveCustomDocumentAs(
@@ -261,7 +312,12 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             this.getPreferredMimeType(destination, this.getDocumentMimeType(document))
         );
         await vscode.workspace.fs.writeFile(destination, buffer);
-        this.markDocumentSaved(document, panel, buffer.byteLength);
+        this.markDocumentSaved(
+            document,
+            panel,
+            buffer.byteLength,
+            this.getPreferredMimeType(destination, this.getDocumentMimeType(document))
+        );
     }
 
     async revertCustomDocument(document: vscode.CustomDocument, _cancellation: vscode.CancellationToken): Promise<void> {
@@ -282,11 +338,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
             return;
         }
 
-        this.markDocumentSaved(document, panel, src.fileSizeBytes);
+        const mimeType = this.getMimeTypeForUri(document.uri);
+        this.markDocumentSaved(document, panel, src.fileSizeBytes, mimeType);
         panel.webview.postMessage({
             command: 'revert-document',
             src: src.src,
-            fileSizeBytes: src.fileSizeBytes
+            fileSizeBytes: src.fileSizeBytes,
+            mimeType
         });
     }
 
@@ -342,9 +400,19 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         });
     }
 
-    private markDocumentSaved(document: vscode.CustomDocument, panel?: vscode.WebviewPanel, fileSizeBytes?: number): void {
+    private markDocumentSaved(
+        document: vscode.CustomDocument,
+        panel?: vscode.WebviewPanel,
+        fileSizeBytes?: number,
+        mimeType?: string
+    ): void {
         const targetPanel = panel ?? this.webviews.get(document.uri.toString());
-        targetPanel?.webview.postMessage({ command: 'document-saved', fileSizeBytes });
+        const resolvedMimeType = mimeType ?? this.getDocumentMimeType(document);
+        targetPanel?.webview.postMessage({
+            command: 'document-saved',
+            fileSizeBytes,
+            mimeType: resolvedMimeType
+        });
     }
 
     private getDocumentMimeType(document: vscode.CustomDocument): string {
@@ -497,75 +565,158 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         };
     }
 
+    private normalizeClipboardBytes(value: unknown): Uint8Array | undefined {
+        if (!value) {
+            return undefined;
+        }
+
+        if (value instanceof ArrayBuffer) {
+            return new Uint8Array(value);
+        }
+
+        if (ArrayBuffer.isView(value)) {
+            const view = value as ArrayBufferView;
+            return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+        }
+
+        if (Array.isArray(value)) {
+            return Uint8Array.from(value);
+        }
+
+        return undefined;
+    }
+
     private resolveClipboardPayload(arrayBuffer: unknown, mimeType: unknown, dataUrl?: unknown): ClipboardImagePayload | undefined {
+        const bytes = this.normalizeClipboardBytes(arrayBuffer);
+        if (bytes && typeof mimeType === 'string' && mimeType) {
+            return {
+                mimeType,
+                bytes
+            };
+        }
+
         const parsedDataUrl = this.parseClipboardDataUrl(dataUrl);
         if (parsedDataUrl) {
             return parsedDataUrl;
         }
 
-        if (!arrayBuffer || typeof (arrayBuffer as ArrayBuffer).byteLength !== 'number' || typeof mimeType !== 'string') {
-            return undefined;
-        }
-
-        return {
-            mimeType,
-            bytes: new Uint8Array(arrayBuffer as ArrayBuffer)
-        };
+        return undefined;
     }
 
-    private async copyImageMessageToClipboard(
-        message: { arrayBuffer?: unknown; mimeType?: unknown; dataUrl?: unknown },
-        successText: string | undefined
-    ): Promise<void> {
-        const payload = this.resolveClipboardPayload(message.arrayBuffer, message.mimeType, message.dataUrl);
-        if (!payload) {
-            vscode.window.showErrorMessage(translate(this.webviewL10n(), 'toast.clipboardUnavailable'));
+    private showToastMessage(text: unknown, preferError = false): void {
+        const message = String(text ?? '').trim();
+        if (!message) {
             return;
         }
 
-        await this.copyImageToClipboard(payload.bytes.buffer, payload.mimeType, successText);
+        this.debugState.showToastCount += 1;
+        this.debugState.lastToastText = message;
+        if (preferError) {
+            void vscode.window.showErrorMessage(message);
+            return;
+        }
+        void vscode.window.showInformationMessage(message);
     }
 
-    private async copyTiffToMacClipboard(tiffPath: string): Promise<void> {
+    private async handleCopyImageMessage(
+        message: { arrayBuffer?: unknown; mimeType?: unknown; dataUrl?: unknown; successText?: unknown },
+        panel: vscode.WebviewPanel
+    ): Promise<void> {
+        const fallbackSuccess = translate(this.webviewL10n(), 'toast.imageCopied');
+        const successText = typeof message.successText === 'string' && message.successText.trim()
+            ? message.successText
+            : fallbackSuccess;
+
         try {
-            await this.execFileAsync('swift', ['-e', this.buildMacClipboardSwiftScript(tiffPath)]);
-        } catch (swiftError) {
-            await this.execFileAsync('osascript', ['-e', this.buildMacClipboardAppleScript(tiffPath)]);
+            const payload = this.resolveClipboardPayload(message.arrayBuffer, message.mimeType, message.dataUrl);
+            this.debugState.lastCopyPayloadKind = payload
+                ? (typeof message.dataUrl === 'string' ? 'dataUrl' : 'arrayBuffer')
+                : 'none';
+            if (!payload) {
+                this.debugState.lastCopyError = 'payload-empty';
+                this.logCopy('payload-empty');
+                await panel.webview.postMessage({
+                    command: 'copy-image-result',
+                    ok: false,
+                    text: translate(this.webviewL10n(), 'toast.clipboardUnavailable')
+                });
+                return;
+            }
+
+            await this.writeImageToSystemClipboard(payload.bytes, payload.mimeType);
+            this.debugState.lastCopyError = '';
+            this.logCopy(`clipboard ok (${payload.mimeType}, ${payload.bytes.byteLength} bytes)`);
+            await panel.webview.postMessage({
+                command: 'copy-image-result',
+                ok: true,
+                text: successText
+            });
+        } catch (error) {
+            this.debugState.lastCopyError = String(error);
+            this.logCopy(`clipboard failed: ${String(error)}`);
+            await panel.webview.postMessage({
+                command: 'copy-image-result',
+                ok: false,
+                text: translate(this.webviewL10n(), 'toast.clipboardFailed', { error: String(error) })
+            });
         }
     }
 
-    private async copyImageToClipboard(
-        arrayBuffer: ArrayBufferLike | null | undefined,
-        mimeType: string,
-        successText?: string
+    private buildWindowsClipboardPowerShell(imagePath: string): string {
+        const escapedPath = imagePath.replace(/'/g, "''");
+        return [
+            'Add-Type -AssemblyName System.Windows.Forms',
+            'Add-Type -AssemblyName System.Drawing',
+            `$image = [System.Drawing.Image]::FromFile('${escapedPath}')`,
+            '[System.Windows.Forms.Clipboard]::SetImage($image)',
+            '$image.Dispose()'
+        ].join('; ');
+    }
+
+    private async copyImageFileToMacClipboard(imagePath: string): Promise<void> {
+        try {
+            await this.execFileAsync('swift', ['-e', this.buildMacClipboardSwiftScript(imagePath)]);
+        } catch (swiftError) {
+            await this.execFileAsync('osascript', ['-e', this.buildMacClipboardAppleScript(imagePath)]);
+        }
+    }
+
+    private async copyImageFileToWindowsClipboard(imagePath: string): Promise<void> {
+        await this.execFileAsync('powershell.exe', [
+            '-NoProfile',
+            '-NonInteractive',
+            '-STA',
+            '-Command',
+            this.buildWindowsClipboardPowerShell(imagePath)
+        ]);
+    }
+
+    private async writeImageToSystemClipboard(
+        bytes: Uint8Array | ArrayBufferLike | null | undefined,
+        mimeType: string
     ): Promise<void> {
-        if (!arrayBuffer) {
-            vscode.window.showErrorMessage(translate(this.webviewL10n(), 'toast.noImageCopy'));
-            return;
+        if (!bytes || (bytes instanceof Uint8Array ? !bytes.byteLength : !(bytes as ArrayBufferLike).byteLength)) {
+            throw new Error(translate(this.webviewL10n(), 'toast.noImageCopy'));
         }
 
-        if (process.platform !== 'darwin') {
-            vscode.window.showErrorMessage(translate(this.webviewL10n(), 'toast.clipboardUnavailable'));
-            return;
+        if (process.platform !== 'darwin' && process.platform !== 'win32') {
+            throw new Error(translate(this.webviewL10n(), 'toast.clipboardUnavailable'));
         }
 
         const extension = this.extensionForClipboardMimeType(mimeType);
         const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const sourcePath = path.join(os.tmpdir(), `vsimage-copy-${id}.${extension}`);
-        const tiffPath = path.join(os.tmpdir(), `vsimage-copy-${id}.tiff`);
 
         try {
-            await fs.promises.writeFile(sourcePath, Buffer.from(new Uint8Array(arrayBuffer)));
-            await this.execFileAsync('sips', ['-s', 'format', 'tiff', sourcePath, '--out', tiffPath]);
-            await this.copyTiffToMacClipboard(tiffPath);
-            vscode.window.showInformationMessage(successText || translate(this.webviewL10n(), 'toast.imageCopied'));
-        } catch (error) {
-            vscode.window.showErrorMessage(
-                translate(this.webviewL10n(), 'toast.clipboardFailed', { error: String(error) })
-            );
+            const buffer = bytes instanceof Uint8Array ? Buffer.from(bytes) : Buffer.from(new Uint8Array(bytes));
+            await fs.promises.writeFile(sourcePath, buffer);
+            if (process.platform === 'darwin') {
+                await this.copyImageFileToMacClipboard(sourcePath);
+                return;
+            }
+            await this.copyImageFileToWindowsClipboard(sourcePath);
         } finally {
             await fs.promises.unlink(sourcePath).catch(() => undefined);
-            await fs.promises.unlink(tiffPath).catch(() => undefined);
         }
     }
 
@@ -681,12 +832,13 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         webview: vscode.Webview,
         initialImageSrc: string,
         initialFileSizeBytes: number | undefined,
+        initialFileMimeType: string | undefined,
         isDocumentEditor = false,
         untitledFilename?: string
     ): string {
         const l10n = this.webviewL10n();
         const lang = resolveLanguageId(vscode.env.language);
-        const extensionVersionLabel = this.getExtensionVersionLabel();
+        const propertiesVersionLabel = this.getPropertiesVersionLabel();
         const l10nEnUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'l10n', 'en.json')));
         const l10nKoUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'l10n', 'ko.json')));
         const canvasLayoutLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'canvasLayoutLogic.js')));
@@ -705,6 +857,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         const loupeLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'loupeLogic.js')));
         const sidebarAutoCollapseLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'sidebarAutoCollapseLogic.js')));
         const toolRailLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'toolRailLogic.js')));
+        const selectionMoveLogicUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'selectionMoveLogic.js')));
         const iconUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'icon.jpg')));
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.js')));
         const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'editor.css')));
@@ -712,6 +865,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
         const cropperCssUri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'cropper.min.css')));
         const safeImageSrc = initialImageSrc.replace(/"/g, '&quot;');
         const safeInitialFileSizeBytes = initialFileSizeBytes != null ? String(initialFileSizeBytes) : '';
+        const safeInitialFileMimeType = (initialFileMimeType || '').replace(/"/g, '&quot;');
         const untitledFilenameAttr = untitledFilename
             ? ` data-untitled-filename="${untitledFilename}"`
             : '';
@@ -725,7 +879,8 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <link href="${cropperCssUri}" rel="stylesheet">
                 <link href="${styleUri}" rel="stylesheet">
             </head>
-            <body data-document-editor="${isDocumentEditor ? 'true' : 'false'}" data-host-platform="${process.platform}" data-lang="${lang}" data-l10n-en="${l10nEnUri}" data-l10n-ko="${l10nKoUri}" data-initial-file-size-bytes="${safeInitialFileSizeBytes}"${untitledFilenameAttr}>
+            <body data-document-editor="${isDocumentEditor ? 'true' : 'false'}" data-host-platform="${process.platform}" data-lang="${lang}" data-l10n-en="${l10nEnUri}" data-l10n-ko="${l10nKoUri}" data-initial-file-size-bytes="${safeInitialFileSizeBytes}" data-initial-file-mime="${safeInitialFileMimeType}"${untitledFilenameAttr}>
+                <div id="editorToast" class="editor-toast" role="status" aria-live="polite"></div>
                 <div id="webviewLoadingOverlay" class="webview-loading-overlay">
                     <div class="webview-loading-card">
                         <div class="webview-loading-spinner" aria-hidden="true"></div>
@@ -805,7 +960,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 <span class="tool-rail-label" data-i18n="sidebar.applyMosaic"></span>
                                 <span class="ui-shortcut-badge"></span>
                             </button>
-                            <button type="button" class="tool-rail-btn" id="btnToolMove" data-tool="move" data-shortcut="H" data-i18n-title="shortcuts.pan">
+                            <button type="button" class="tool-rail-btn" id="btnToolMove" data-tool="move" data-shortcut="V" data-i18n-title="shortcuts.moveTool">
                                 <svg class="tool-rail-icon" viewBox="0 0 24 24" aria-hidden="true">
                                     <path d="M12 3v18"></path>
                                     <path d="M3 12h18"></path>
@@ -874,11 +1029,12 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                         <div class="section-card section-card-properties">
                             <div class="section-title section-title-with-version">
                                 <span data-i18n="sidebar.properties"></span>
-                                <span class="section-title-version">${extensionVersionLabel ? `(${extensionVersionLabel})` : ''}</span>
+                                <span class="section-title-version">${propertiesVersionLabel ? `(${propertiesVersionLabel})` : ''}</span>
                             </div>
                             <div style="font-size: 0.8rem; line-height: 1.5; color: #aaa;">
                                 <div><span data-i18n="sidebar.dimensions"></span> <span id="lblDimensions">0 × 0</span> px</div>
                                 <div><span data-i18n="sidebar.fileSize"></span> <span id="lblFileSize">—</span></div>
+                                <div><span data-i18n="sidebar.fileFormat"></span> <span id="lblFileFormat">—</span></div>
                             </div>
                             <div class="properties-zoom-row">
                                 <button class="tb-btn" id="btnZoomOut" data-shortcut="-" data-i18n-title="toolbar.zoomOut">-<span class="ui-shortcut-badge"></span></button>
@@ -996,7 +1152,9 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                                 </div>
                             </div>
                             <div class="tool-options-panel" id="toolOptionsMove">
-                                <p class="tool-options-note" data-i18n="shortcuts.pan"></p>
+                                <p class="tool-options-note" data-i18n="toolOptions.moveSelection"></p>
+                                <p class="tool-options-note tool-options-note-secondary" data-i18n="toolOptions.movePanHint"></p>
+                                <button class="btn-accent" id="btnApplyMoveSelection" data-shortcut="Enter" disabled><span data-i18n="toolOptions.applyMoveSelection"></span><span class="ui-shortcut-badge"></span></button>
                             </div>
                         </div>
 
@@ -1205,6 +1363,7 @@ export class ImageCustomEditorProvider implements vscode.CustomEditorProvider {
                 <script src="${loupeLogicUri}"></script>
                 <script src="${sidebarAutoCollapseLogicUri}"></script>
                 <script src="${toolRailLogicUri}"></script>
+                <script src="${selectionMoveLogicUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
             </html>

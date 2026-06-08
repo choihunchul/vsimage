@@ -53,6 +53,30 @@ function resolveMarqueeKeyboardStep(shiftKey) {
     return shiftKey ? 10 : 1;
 }
 
+function constrainPixelMoveDelta(deltaX, deltaY) {
+    const dx = Number(deltaX) || 0;
+    const dy = Number(deltaY) || 0;
+    if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) {
+        return { deltaX: 0, deltaY: 0 };
+    }
+
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const signX = dx < 0 ? -1 : 1;
+    const signY = dy < 0 ? -1 : 1;
+    const tan22_5 = Math.tan(Math.PI / 8);
+
+    if (absY / absX < tan22_5) {
+        return { deltaX: Math.round(dx), deltaY: 0 };
+    }
+    if (absY / absX > 1 / tan22_5) {
+        return { deltaX: 0, deltaY: Math.round(dy) };
+    }
+
+    const magnitude = Math.round(Math.max(absX, absY));
+    return { deltaX: signX * magnitude, deltaY: signY * magnitude };
+}
+
 function resolveModifierMarqueeBox(state) {
     if (!state || !state.startPoint || !state.currentPoint) {
         return null;
@@ -72,9 +96,16 @@ function resolveModifierMarqueeBox(state) {
     const hasStartBox = hasValidCropBox(startCropData);
 
     if (spacePressed && hasStartBox) {
+        let deltaX = currentPoint.x - startPoint.x;
+        let deltaY = currentPoint.y - startPoint.y;
+        if (shiftKey) {
+            const constrained = constrainPixelMoveDelta(deltaX, deltaY);
+            deltaX = constrained.deltaX;
+            deltaY = constrained.deltaY;
+        }
         return clampCropBox(
-            startCropData.x + (currentPoint.x - startPoint.x),
-            startCropData.y + (currentPoint.y - startPoint.y),
+            startCropData.x + deltaX,
+            startCropData.y + deltaY,
             startCropData.width,
             startCropData.height,
             originalWidth,
@@ -88,14 +119,15 @@ function resolveModifierMarqueeBox(state) {
 
     const anchorX = hasStartBox ? startCropData.x + (startCropData.width / 2) : startPoint.x;
     const anchorY = hasStartBox ? startCropData.y + (startCropData.height / 2) : startPoint.y;
-    let halfWidth = Math.abs(currentPoint.x - anchorX);
-    let halfHeight = Math.abs(currentPoint.y - anchorY);
-
+    let vectorX = currentPoint.x - anchorX;
+    let vectorY = currentPoint.y - anchorY;
     if (shiftKey) {
-        const half = Math.max(halfWidth, halfHeight);
-        halfWidth = half;
-        halfHeight = half;
+        const constrained = constrainPixelMoveDelta(vectorX, vectorY);
+        vectorX = constrained.deltaX;
+        vectorY = constrained.deltaY;
     }
+    let halfWidth = Math.abs(vectorX);
+    let halfHeight = Math.abs(vectorY);
 
     return clampCropBox(
         anchorX - halfWidth,
@@ -116,15 +148,88 @@ function resolveDragMarqueeBox(state) {
         startPoint,
         currentPoint,
         originalWidth,
+        originalHeight,
+        shiftKey
+    } = state;
+
+    let endX = currentPoint.x;
+    let endY = currentPoint.y;
+    if (shiftKey) {
+        const constrained = constrainPixelMoveDelta(endX - startPoint.x, endY - startPoint.y);
+        endX = startPoint.x + constrained.deltaX;
+        endY = startPoint.y + constrained.deltaY;
+    }
+
+    const x = Math.min(startPoint.x, endX);
+    const y = Math.min(startPoint.y, endY);
+    const width = Math.abs(endX - startPoint.x);
+    const height = Math.abs(endY - startPoint.y);
+
+    return clampCropBox(x, y, width || 1, height || 1, originalWidth, originalHeight);
+}
+
+function resolveShiftConstrainedCropBox(state) {
+    if (!state || !state.startCropData || !state.startPoint || !state.currentPoint) {
+        return null;
+    }
+
+    const {
+        action,
+        startCropData,
+        startPoint,
+        currentPoint,
+        originalWidth,
         originalHeight
     } = state;
 
-    const x = Math.min(startPoint.x, currentPoint.x);
-    const y = Math.min(startPoint.y, currentPoint.y);
-    const width = Math.abs(currentPoint.x - startPoint.x);
-    const height = Math.abs(currentPoint.y - startPoint.y);
+    const constrained = constrainPixelMoveDelta(
+        currentPoint.x - startPoint.x,
+        currentPoint.y - startPoint.y
+    );
+    const cx = startPoint.x + constrained.deltaX;
+    const cy = startPoint.y + constrained.deltaY;
+    const left = startCropData.x;
+    const top = startCropData.y;
+    const right = startCropData.x + startCropData.width;
+    const bottom = startCropData.y + startCropData.height;
 
-    return clampCropBox(x, y, width || 1, height || 1, originalWidth, originalHeight);
+    switch (action) {
+        case 'move':
+        case 'all':
+            return clampCropBox(
+                startCropData.x + constrained.deltaX,
+                startCropData.y + constrained.deltaY,
+                startCropData.width,
+                startCropData.height,
+                originalWidth,
+                originalHeight
+            );
+        case 'crop':
+            return resolveDragMarqueeBox({
+                startPoint,
+                currentPoint: { x: cx, y: cy },
+                originalWidth,
+                originalHeight
+            });
+        case 'e':
+            return clampCropBox(left, top, Math.max(1, cx - left), startCropData.height, originalWidth, originalHeight);
+        case 'w':
+            return clampCropBox(cx, top, Math.max(1, right - cx), startCropData.height, originalWidth, originalHeight);
+        case 's':
+            return clampCropBox(left, top, startCropData.width, Math.max(1, cy - top), originalWidth, originalHeight);
+        case 'n':
+            return clampCropBox(left, cy, startCropData.width, Math.max(1, bottom - cy), originalWidth, originalHeight);
+        case 'se':
+            return clampCropBox(left, top, Math.max(1, cx - left), Math.max(1, cy - top), originalWidth, originalHeight);
+        case 'sw':
+            return clampCropBox(cx, top, Math.max(1, right - cx), Math.max(1, cy - top), originalWidth, originalHeight);
+        case 'ne':
+            return clampCropBox(left, cy, Math.max(1, cx - left), Math.max(1, bottom - cy), originalWidth, originalHeight);
+        case 'nw':
+            return clampCropBox(cx, cy, Math.max(1, right - cx), Math.max(1, bottom - cy), originalWidth, originalHeight);
+        default:
+            return null;
+    }
 }
 
 /** @returns {'trimToContent'|'expandToFull'|null} */
@@ -258,14 +363,20 @@ function shouldInvokeImageZoomDblClick(state, point, cropData) {
     return true;
 }
 
+function hasActiveMarqueeSelection(cropped, cropData) {
+    return Boolean(cropped) && hasValidCropBox(cropData);
+}
+
 const api = {
     clampCropBox,
     fullImageCropBounds,
     isMarqueeFullImageNatural,
     isPointInCropSelection,
     resolveMarqueeKeyboardStep,
+    constrainPixelMoveDelta,
     resolveModifierMarqueeBox,
     resolveDragMarqueeBox,
+    resolveShiftConstrainedCropBox,
     getMarqueeDblClickToggleAction,
     canHandleMarqueeDblClick,
     isImageZoomBelowFull,
@@ -273,6 +384,7 @@ const api = {
     canHandleImageZoomDblClick,
     shouldInvokeImageZoomDblClick,
     shouldAutoEnableMarqueeOnDrag,
+    hasActiveMarqueeSelection,
     isValidNaturalCropSnapshot,
     shouldSnapshotCropForZoom,
     cloneNaturalCropSnapshot,

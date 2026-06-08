@@ -26,6 +26,7 @@
   "sidebar.name": "이름:",
   "sidebar.dimensions": "크기:",
   "sidebar.fileSize": "파일 크기:",
+  "sidebar.fileFormat": "파일 형식 (실제):",
   "sidebar.autoCollapse": "자동접기",
   "sidebar.history": "🕘 히스토리",
   "sidebar.historyHint": "스냅샷을 클릭하면 해당 상태로 돌아갑니다.",
@@ -86,6 +87,7 @@
   "copyModal.formatPng": "PNG",
   "copyModal.formatJpeg": "JPEG",
   "copyModal.formatWebp": "WebP",
+  "copyModal.formatGif": "GIF",
 
   "mosaicModal.title": "영역 모자이크",
   "mosaicModal.close": "닫기",
@@ -99,6 +101,7 @@
   "shortcuts.copyImage": "이미지 복사",
   "shortcuts.selectAll": "전체 선택",
   "shortcuts.pan": "이미지 이동",
+  "shortcuts.moveTool": "선택 영역 이동",
   "shortcuts.cursor": "아무 작업 안 함",
   "shortcuts.zoomLoupe": "영역 확대 미리보기 (캔버스)",
   "shortcuts.dblClickImageKey": "더블클릭",
@@ -119,6 +122,10 @@
   "shortcuts.moveMarquee": "마퀴 이동",
   "shortcuts.moveMarqueeLarge": "마퀴 10px 이동",
   "shortcuts.marqueeSelect": "마퀴 선택",
+  "toolOptions.moveSelection": "마퀴 안을 드래그해 위치를 조정합니다. Shift를 누르면 수평·수직·45° 대각선으로만 이동합니다. Enter 또는 이동 적용으로 확정하면 원래 위치는 지워집니다.",
+  "toolOptions.movePanHint": "이 도구가 켜진 상태에서 Space 또는 H를 누르고 있으면 캔버스를 이동할 수 있습니다.",
+  "toolOptions.applyMoveSelection": "이동 적용",
+  "toast.moveSelectionApplied": "선택 픽셀을 이동했습니다. Ctrl+Z로 실행 취소할 수 있습니다.",
   "shortcuts.toggleCrop": "자르기 / 마퀴 켜기/끄기",
   "shortcuts.magicWand": "매직봉 선택",
   "selection.width": "너비",
@@ -169,5 +176,6 @@
   "edit.mosaic": "모자이크",
   "edit.fillSelection": "선택 영역 채우기",
   "edit.eraseSelection": "선택 영역 지우기",
+  "edit.moveSelection": "선택 영역 이동",
   "edit.magicWandSelect": "매직봉 선택"
 }

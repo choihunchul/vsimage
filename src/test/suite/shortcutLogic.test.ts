@@ -14,6 +14,7 @@ const shortcuts = require(path.join(__dirname, '../../../../media/shortcutLogic.
     canRunWhenInputFocused: (action: string | null) => boolean;
     isPanHoldCode: (code: string) => boolean;
     isEyedropperHoldCode: (code: string) => boolean;
+    isHostBridgedAction: (action: string | null) => boolean;
 };
 
 suite('Photoshop-style shortcuts', () => {
@@ -41,6 +42,13 @@ suite('Photoshop-style shortcuts', () => {
         assert.strictEqual(shortcuts.getShortcutAction({ key: '-', ctrlKey: true }), null);
     });
 
+    test('maps V to the move selection tool', () => {
+        assert.strictEqual(shortcuts.getShortcutAction({ key: 'v' }), 'move');
+        assert.strictEqual(shortcuts.getShortcutAction({ key: 'V' }), 'move');
+        assert.strictEqual(shortcuts.getShortcutAction({ key: 'v', code: 'KeyV' }), 'move');
+        assert.strictEqual(shortcuts.getShortcutAction({ key: 'v', metaKey: true }), null);
+    });
+
     test('keeps crop key but disables the magic wand shortcut', () => {
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'c' }), 'crop');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'm' }), 'marquee');
@@ -58,6 +66,14 @@ suite('Photoshop-style shortcuts', () => {
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㅌ', code: 'KeyX' }), 'mosaic');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㄱ', code: 'KeyR' }), 'rotateRight');
         assert.strictEqual(shortcuts.getShortcutAction({ key: 'ㄱ', code: 'KeyR', shiftKey: true }), 'rotateLeft');
+    });
+
+    test('marks VS Code keybinding actions as host-bridged', () => {
+        assert.strictEqual(shortcuts.isHostBridgedAction('move'), true);
+        assert.strictEqual(shortcuts.isHostBridgedAction('marquee'), true);
+        assert.strictEqual(shortcuts.isHostBridgedAction('copy'), true);
+        assert.strictEqual(shortcuts.isHostBridgedAction(null), false);
+        assert.strictEqual(shortcuts.isHostBridgedAction('magicWand'), false);
     });
 
     test('allows image copy even when an editor input keeps focus', () => {

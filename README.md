@@ -9,10 +9,16 @@ It also aims to feel familiar if you already use Photoshop, with shortcuts and i
 ![Version](https://img.shields.io/github/v/release/choihunchul/vsimage?label=version)
 ![License](https://img.shields.io/github/license/choihunchul/vsimage)
 
+![vsimage editor — marquee selection, tool rail, keyboard shortcuts](docs/screenshot.png)
+
 ## Features
 
 - **Default image editor** for `png`, `jpg`, `jpeg`, `webp`, `gif` (opens in vsimage on double-click)
 - **Explorer / tab context menu** — *Edit with VS Code Image Editor* (`vsimage: Open with Image Editor`)
+- **Photoshop-style tool rail** — cursor, marquee, move, crop, color picker, and related tools on the left
+- **Selection pixel move (`V`)** — drag pixels inside the marquee; confirm with **Enter** or **Apply move** (clears the source area)
+- **Full-image move** — press **V** with no marquee to move the entire canvas (marquee UI hidden)
+- **Shift constrain** — horizontal, vertical, or 45° diagonal while dragging marquee, moving pixels, or resizing
 - **Crop** — quick presets (auto, free, 1:1, 16:9, 4:3, circle) and marquee shortcuts for everyday trimming
 - **Resize** — width/height, scale slider (10–200%), aspect-ratio lock; stepped downscale for sharper shrinks
 - **Mosaic** — simple block mosaic for hiding small areas while working
@@ -41,8 +47,9 @@ If an image already opened in another viewer, use **Reopen Editor With…** → 
 
 ### Workspace layout
 
+- **Tool rail** — Photoshop-style tools on the left (cursor, marquee, move, crop, color picker, …).
 - **Canvas** — image, rulers, scroll/zoom; floating toolbar (zoom, rotate, flip).
-- **Sidebar** — properties, quick crop, quick resize, history, save/export.
+- **Sidebar** — properties, selection info, tool options, history, save/export.
 - Hold **Cmd/Ctrl** on the canvas to show the keyboard shortcut overlay.
 
 ### Crop & marquee
@@ -54,6 +61,9 @@ If an image already opened in another viewer, use **Reopen Editor With…** → 
 | Shrink marquee (1px per side) | **`[`** |
 | Expand marquee (1px per side) | **`]`** |
 | Move marquee | **Arrow keys** (**Shift** = 10px) |
+| Move selection pixels | **V**, then drag inside marquee; **Shift** = axis / 45° |
+| Apply pixel move | **Enter** or sidebar **Apply move** |
+| Constrain drag / resize | **Shift** + drag (marquee, move, resize) |
 | Apply crop | **Enter** or sidebar button |
 | Auto crop to content | Sidebar **Auto** preset |
 | Full image ↔ trim to content | **Double-click inside** the marquee |
@@ -102,12 +112,14 @@ After **crop** or **resize**, the resize panel reflects the **current image dime
 | `Z` (hold) + Drag | Magnify area on canvas |
 | `Double-click` | 100% ↔ fit (no marquee / outside selection) |
 | `Double-click` (in marquee) | Full image ↔ trim to content |
-| `C` / `M` | Toggle crop mode |
+| `C` / `M` | Toggle crop mode / marquee tool |
+| `V` | Selection pixel move tool |
 | `W + Click` | Magic wand select (보완 중, 현재 UI에서 숨김) |
 | `I + Click` | Pick color |
 | `[` / `]` | Shrink / expand marquee (1px per side) |
 | `↑ ↓ ← →` | Move marquee |
-| `Enter` | Apply crop |
+| `Shift` + drag | Constrain marquee, pixel move, or resize |
+| `Enter` | Apply crop (or confirm pixel move when move tool is active) |
 | `Del / Backspace` | Erase selection |
 | `Esc` | Cancel loupe / modals / crop modes |
 

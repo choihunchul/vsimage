@@ -29,6 +29,16 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vsimage.debugState', async () => {
+            const state = provider.getDebugState();
+            const channel = vscode.window.createOutputChannel('vsimage');
+            channel.appendLine(JSON.stringify(state, null, 2));
+            channel.show(true);
+            return state;
+        })
+    );
 }
 
 export function deactivate() {}

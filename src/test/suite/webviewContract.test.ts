@@ -35,7 +35,8 @@ suite('Webview contracts', () => {
             'transformLogicUri',
             'loupeLogicUri',
             'sidebarAutoCollapseLogicUri',
-            'toolRailLogicUri'
+            'toolRailLogicUri',
+            'selectionMoveLogicUri'
         ].forEach(uri => {
             const scriptIndex = provider.indexOf(`<script src="\${${uri}}"></script>`);
             assert.ok(scriptIndex >= 0, `${uri} script tag is missing`);
@@ -85,26 +86,68 @@ suite('Webview contracts', () => {
         assert.ok(editor.includes('const saveExportLogic = globalThis.VsimageSaveExportLogic || {'));
     });
 
+    test('preserves marquee selection when leaving crop tools so partial copy still works', () => {
+        assert.ok(editor.includes('let suppressCropCheckboxPreserveSelection = false;'));
+        assert.ok(editor.includes('suppressCropCheckboxPreserveSelection = hasActiveMarqueeSelection();'));
+        assert.ok(editor.includes('if (cropper && !suppressCropCheckboxPreserveSelection) {'));
+        assert.ok(editor.includes('function hasActiveMarqueeSelection() {'));
+        assert.ok(editor.includes('cropMarqueeLogic.hasActiveMarqueeSelection'));
+        assert.ok(editor.includes('const hasMarqueeOverlay = shouldShowCropMarqueeOverlay();'));
+        assert.ok(editor.includes('const hasSelection = hasActiveMarqueeSelection();'));
+    });
+
+    test('shows copy feedback in the editor and through the host toast bridge', () => {
+        assert.ok(provider.includes('id="editorToast"'));
+        assert.ok(styles.includes('.editor-toast'));
+        assert.ok(editor.includes('function notifyToast(text, options = {}) {'));
+        assert.ok(editor.includes("case 'copy-image-result':"));
+        assert.ok(provider.includes("command: 'copy-image-result'"));
+        assert.ok(provider.includes('handleCopyImageMessage'));
+        assert.ok(provider.includes('writeImageToSystemClipboard'));
+    });
+
     test('guards image clipboard writes and always routes copy outcomes through toasts', () => {
         assert.ok(editor.includes('function copyImageToClipboard() {'));
         assert.ok(editor.includes("vscode.postMessage({ command: 'copy-function-enter' });"));
-        assert.ok(editor.includes("if (!cropper) {\n            vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });"));
+        assert.ok(editor.includes("if (!cropper) {\n            notifyToast(t('toast.noImageCopy'), { isError: true });"));
         assert.ok(editor.includes('performCopyToClipboard(format, qualityPercent, selectionOnly);'));
         assert.ok(!editor.includes("function copyImageToClipboard() {\n        if (!cropper) {\n            return;\n        }\n        showCopyModal();"));
         assert.ok(editor.includes('const clipboard = navigator.clipboard;'));
         assert.ok(editor.includes('const ClipboardItemCtor = window.ClipboardItem;'));
         assert.ok(editor.includes('clipboard.write(['));
         assert.ok(editor.includes('new ClipboardItemCtor({'));
-        assert.ok(editor.includes('if (usesMacShortcuts()) {'));
+        assert.ok(editor.includes('function shouldUseHostClipboardCopy() {'));
+        assert.ok(editor.includes("hostPlatform === 'darwin' || hostPlatform === 'win32'"));
+        assert.ok(editor.includes('if (shouldUseHostClipboardCopy()) {'));
         assert.ok(provider.includes("translate(this.webviewL10n(), 'toast.clipboardUnavailable')"));
         assert.ok(editor.includes('try {'));
-        assert.ok(editor.includes('requestHostClipboardCopyDataUrl(dataUrl, toastText);'));
+        assert.ok(editor.includes('function requestHostClipboardCopy(arrayBuffer, mimeType, successText) {'));
+        assert.ok(editor.includes('function requestHostClipboardCopyFromBlob(blob, format, successText) {'));
+        assert.ok(editor.includes('function copyBlobViaWebviewClipboard(blob, toastText, onFallback)'));
+        assert.ok(editor.includes('function ensureCopyFocusTarget() {'));
+        assert.ok(editor.includes('function getEditorToastEl()'));
+        assert.ok(editor.includes('function beginCopyResultWatch()'));
+        assert.ok(editor.includes('performCopyToClipboard: host path via dataUrl'));
+        assert.ok(editor.includes('window.editorApi.getCanvasDataUrl(canvasExportOptions)'));
+        assert.ok(editor.includes('readBlobAsDataUrl('));
+        assert.ok(editor.includes('readBlobAsArrayBuffer('));
+        assert.ok(provider.includes('createOutputChannel(\'vsimage\')'));
+        assert.ok(provider.includes('logCopy('));
+        assert.ok(provider.includes("case 'copy-debug':"));
+        assert.ok(editor.includes('function canvasToBlob(canvas, format, quality, callback)'));
+        assert.ok(editor.includes('function logCopyDebug(text)'));
         assert.ok(editor.includes("command: 'copy-image'"));
-        assert.ok(editor.includes('dataUrl,'));
+        assert.ok(editor.includes('arrayBuffer,'));
+        assert.ok(editor.includes('mimeType,'));
+        assert.ok(provider.includes('normalizeClipboardBytes'));
         assert.ok(provider.includes("case 'copy-image':"));
-        assert.ok(provider.includes('copyImageMessageToClipboard(message, message.successText)'));
+        assert.ok(provider.includes('void this.handleCopyImageMessage(message, webviewPanel);'));
         assert.ok(provider.includes('parseClipboardDataUrl'));
-        assert.ok(provider.includes("this.execFileAsync('sips'"));
+        assert.ok(provider.includes('copyImageFileToMacClipboard'));
+        assert.ok(provider.includes('copyImageFileToWindowsClipboard'));
+        assert.ok(provider.includes('buildWindowsClipboardPowerShell'));
+        assert.ok(provider.includes("execFileAsync('powershell.exe'"));
+        assert.ok(!provider.includes("execFileAsync('sips', ['-s', 'format', 'tiff'"));
         assert.ok(provider.includes("this.execFileAsync('swift'"));
         assert.ok(provider.includes('NSPasteboard.general'));
         assert.ok(provider.includes('writeObjects([image])'));
@@ -128,6 +171,10 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('section-title-with-version'));
         assert.ok(provider.includes('section-title-version'));
         assert.ok(provider.includes("path.join(this.context.extensionPath, 'package.json')"));
+        assert.ok(provider.includes('getPropertiesVersionLabel'));
+        assert.ok(provider.includes('ExtensionMode.Development'));
+        assert.ok(provider.includes('__VSIMAGE_BUILD_TIME__'));
+        assert.ok(provider.includes('propertiesVersionLabel'));
     });
 
     test('uses the vsimage icon in the empty dashboard hero', () => {
@@ -175,6 +222,13 @@ suite('Webview contracts', () => {
         const saveIndex = provider.indexOf('section-card-save');
 
         assert.ok(provider.includes('sidebar.fileSize'));
+        assert.ok(provider.includes('sidebar.fileFormat'));
+        assert.ok(provider.includes('id="lblFileFormat"'));
+        assert.ok(provider.includes('data-initial-file-mime'));
+        assert.ok(editor.includes('function setFileFormatLabel(mimeType) {'));
+        assert.ok(editor.includes('let currentFileMimeType = document.body.dataset.initialFileMime'));
+        assert.ok(editor.includes('function getImageFormatLabel(mimeType) {'));
+        assert.ok(editor.includes("case 'copyModal.formatGif'") || editor.includes("t('copyModal.formatGif')"));
         assert.ok(provider.includes('btnSidebarAutoCollapse'));
         assert.ok(propertiesIndex >= 0);
         assert.ok(historyIndex >= 0);
@@ -300,8 +354,10 @@ suite('Webview contracts', () => {
 
     test('turns image drags into marquee activation when crop is off and no selection exists', () => {
         assert.ok(editor.includes('shouldAutoEnableMarqueeOnDrag'));
-        assert.ok(editor.includes("workspace.addEventListener('mousedown'"));
+        assert.ok(editor.includes("document.addEventListener('mousedown'"));
+        assert.ok(editor.includes('onMarqueeDragStart(e)'));
         assert.ok(editor.includes('resolveDragMarqueeBox'));
+        assert.ok(editor.includes('resolveShiftConstrainedCropBox'));
         assert.ok(editor.includes('cropper.setData(nextBox)'));
     });
 
@@ -363,7 +419,15 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('id="btnToolMarquee" data-tool="marquee" data-shortcut="M"'));
         assert.ok(provider.includes('id="btnToolCrop" data-tool="crop" data-shortcut="C"'));
         assert.ok(provider.includes('id="btnToolMosaic" data-tool="mosaic" data-shortcut="X"'));
-        assert.ok(provider.includes('id="btnToolMove" data-tool="move" data-shortcut="H"'));
+        assert.ok(provider.includes('id="btnToolMove" data-tool="move" data-shortcut="V"'));
+        assert.ok(provider.includes('data-i18n="toolOptions.moveSelection"'));
+        assert.ok(editor.includes('function toggleMoveToolWithKey()'));
+        assert.ok(editor.includes('function isSelectionMoveToolActive()'));
+        assert.ok(editor.includes('function enableCropOverlayPreservingSelection()'));
+        assert.ok(editor.includes('function beginPixelMoveDrag(e)'));
+        assert.ok(editor.includes('function commitSelectionPixelMove(sourceBounds, destBounds)'));
+        assert.ok(provider.includes('selectionMoveLogicUri'));
+        assert.ok(editor.includes("shortcutAction === 'move'"));
         assert.ok(provider.includes('<span class="ui-shortcut-badge"></span>'));
     });
 
@@ -472,28 +536,61 @@ suite('Webview contracts', () => {
 
     test('bridges VS Code webview keybindings into editor shortcuts', () => {
         const keybindings = manifest.contributes?.keybindings ?? [];
-        const bridgedActions = ['save', 'undo', 'copy', 'selectAll', 'marquee', 'crop', 'mosaic', 'rotateLeft', 'rotateRight', 'zoomIn', 'zoomOut', 'fitViewport', 'actualPixels'];
+        const bridgedActions = ['save', 'undo', 'copy', 'selectAll', 'marquee', 'move', 'crop', 'mosaic', 'rotateLeft', 'rotateRight', 'zoomIn', 'zoomOut', 'fitViewport', 'actualPixels'];
 
         for (const action of bridgedActions) {
             const binding = keybindings.find(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === action);
             assert.ok(binding, `${action} keybinding is missing`);
-            assert.strictEqual(binding.when, "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'");
+            assert.strictEqual(binding.when, "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'");
         }
 
         const cropBindings = keybindings.filter(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'crop');
-        assert.ok(cropBindings.some(item => item.key === 'c'));
+        assert.ok(cropBindings.some(item => item.key === '[KeyC]'));
 
         const marqueeBindings = keybindings.filter(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'marquee');
-        assert.ok(marqueeBindings.some(item => item.key === 'm'));
+        assert.ok(marqueeBindings.some(item => item.key === '[KeyM]'));
+
+        const moveBindings = keybindings.filter(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'move');
+        assert.ok(moveBindings.some(item => item.key === '[KeyV]'));
 
         const mosaicBindings = keybindings.filter(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'mosaic');
-        assert.ok(mosaicBindings.some(item => item.key === 'x'));
+        assert.ok(mosaicBindings.some(item => item.key === '[KeyX]'));
         assert.ok(!keybindings.some(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'magicWand'));
 
         assert.ok(extension.includes("provider.runShortcut(action)"));
         assert.ok(provider.includes("postMessage({ command: 'run-shortcut', action })"));
         assert.ok(editor.includes("case 'run-shortcut':"));
         assert.ok(editor.includes('runShortcutAction(message.action)'));
+        assert.ok(editor.includes('shouldSkipDuplicateHostShortcut(message.action)'));
+        assert.ok(editor.includes('markLocalShortcutHandled(shortcutAction)'));
+        assert.ok(editor.includes('publishToolDebugState()'));
+        assert.ok(editor.includes('function enterSelectionMoveTool()'));
+        assert.ok(editor.includes('function isImplicitFullImageMoveSelection()'));
+        assert.ok(editor.includes('function shouldShowCropMarqueeOverlay()'));
+        assert.ok(editor.includes('if (hasActiveMarqueeSelection()) {'));
+        assert.ok(editor.includes('initMarqueeToFullImage();'));
+        assert.ok(editor.includes('implicit-full-image-move'));
+        assert.ok(editor.includes('setCropOverlayEnabledSilently(true)'));
+        assert.ok(editor.includes('if (activeTool === \'move\' && chkEnableCrop.checked)'));
+        assert.ok(editor.includes('restoreCropSelectionBounds(pendingSelection)'));
+        assert.ok(editor.includes('activateCursorTool: true'));
+        assert.ok(editor.includes('activateMoveToolWithKey()'));
+        assert.ok(editor.includes('commitSelectionPixelMove(sourceBounds, destBounds)'));
+        assert.ok(editor.includes('function moveCropMarqueeWithArrow(key, shiftKey)'));
+        assert.ok(editor.includes('btnApplyMoveSelection'));
+        assert.ok(editor.includes('function resolvePixelMoveDragDelta(currentPoint, dragState, shiftKey)'));
+        assert.ok(editor.includes('function syncMoveToolSelectionFromCrop()'));
+        assert.ok(editor.includes('if (activeTool === \'move\' && isSelectionMoveToolActive()) {'));
+        assert.ok(editor.includes('cropper.options.cropBoxResizable = !pixelMoveDragState'));
+        assert.ok(editor.includes('function applyPendingSelectionPixelMove()'));
+        assert.ok(editor.includes('function hasPendingSelectionPixelMove()'));
+        assert.ok(provider.includes('id="btnApplyMoveSelection"'));
+        assert.ok(editor.includes('cropper.options.cropBoxMovable = !lockCropBox'));
+        assert.ok(editor.includes('function isPixelMoveCanvasTarget(e)'));
+        assert.ok(editor.includes('stopImmediatePropagation'));
+        assert.ok(editor.includes('function renderPixelMovePreview(sourceBounds, destBounds)'));
+        assert.ok(editor.includes('schedulePixelMovePreviewRender(pixelMoveDragState.sourceBounds, destBounds)'));
+        assert.ok(editor.includes('isSelectionMoveToolActive()'));
         assert.ok(editor.includes('toggleMarqueeModeWithKey()'));
     });
 
@@ -505,7 +602,7 @@ suite('Webview contracts', () => {
         assert.ok(provider.includes('private readonly readyWebviews = new Map<string, boolean>();'));
         assert.ok(provider.includes('private readonly pendingShortcuts = new Map<string, string[]>();'));
         assert.ok(provider.includes('flushPendingShortcuts'));
-        assert.ok(editor.includes("const hostPlatform = document.body && document.body.dataset ? document.body.dataset.hostPlatform : '';"));
+        assert.ok(editor.includes('function getHostPlatform() {'));
     });
 
     test('handles shifted bracket marquee resize using physical key codes', () => {

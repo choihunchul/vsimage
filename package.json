@@ -2,7 +2,7 @@
   "name": "vsimage",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "1.3.8",
+  "version": "1.3.9",
   "publisher": "choihunchul",
   "author": {
     "name": "choihunchul"
@@ -38,6 +38,7 @@
   "activationEvents": [
     "onCommand:vsimage.openWithEditor",
     "onCommand:vsimage.newEditor",
+    "onCommand:vsimage.debugState",
     "onCustomEditor:vsimage.editor"
   ],
   "main": "./dist/extension.js",
@@ -57,6 +58,11 @@
         "command": "vsimage.runShortcut",
         "title": "Run vsimage Shortcut",
         "category": "vsimage"
+      },
+      {
+        "command": "vsimage.debugState",
+        "title": "%command.debugState.title%",
+        "category": "vsimage"
       }
     ],
     "keybindings": [
@@ -64,84 +70,90 @@
         "command": "vsimage.runShortcut",
         "key": "ctrl+s",
         "mac": "cmd+s",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "save" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "ctrl+z",
         "mac": "cmd+z",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "undo" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "ctrl+c",
         "mac": "cmd+c",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "copy" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "ctrl+a",
         "mac": "cmd+a",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "selectAll" }
       },
       {
         "command": "vsimage.runShortcut",
-        "key": "c",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "key": "[KeyC]",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "crop" }
       },
       {
         "command": "vsimage.runShortcut",
-        "key": "m",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "key": "[KeyM]",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "marquee" }
       },
       {
         "command": "vsimage.runShortcut",
-        "key": "x",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "key": "[KeyV]",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "args": { "action": "move" }
+      },
+      {
+        "command": "vsimage.runShortcut",
+        "key": "[KeyX]",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "mosaic" }
       },
       {
         "command": "vsimage.runShortcut",
-        "key": "r",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "key": "[KeyR]",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "rotateRight" }
       },
       {
         "command": "vsimage.runShortcut",
-        "key": "shift+r",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "key": "shift+[KeyR]",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "rotateLeft" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "shift+=",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "zoomIn" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "-",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "zoomOut" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "ctrl+0",
         "mac": "cmd+0",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "fitViewport" }
       },
       {
         "command": "vsimage.runShortcut",
         "key": "ctrl+1",
         "mac": "cmd+1",
-        "when": "activeEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
+        "when": "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'",
         "args": { "action": "actualPixels" }
       }
     ],
@@ -209,6 +221,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "test:unit": "npm run compile-tests && mocha \"out/src/test/suite/*.test.js\" --ui tdd --ignore out/src/test/suite/extension.test.js",
+    "test:move-harness": "node scripts/run-move-harness.mjs",
     "pretest": "npm run compile-tests && npm run compile",
     "test": "node out/src/test/runTest.js"
   },

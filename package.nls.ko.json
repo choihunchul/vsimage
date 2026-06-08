@@ -3,6 +3,7 @@
   "extension.description": "VS Code 안에서 이미지를 자르고, 크기를 조절하고, 형식을 변환하는 프리미엄 이미지 에디터입니다.",
   "command.newEditor.title": "빈 이미지 에디터 만들기",
   "command.openWithEditor.title": "vsimage로 편집하기",
+  "command.debugState.title": "vsimage 디버그 상태 보기",
   "customEditor.displayName": "VS Code 이미지 에디터",
   "untitledPanel.title": "제목 없는 이미지 에디터",
   "toast.saved": "이미지를 저장했습니다.",

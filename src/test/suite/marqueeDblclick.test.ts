@@ -35,6 +35,17 @@ const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.j
             currentPoint?: { x: number; y: number } | null;
             originalWidth: number;
             originalHeight: number;
+            shiftKey?: boolean;
+        }
+    ) => { x: number; y: number; width: number; height: number } | null;
+    resolveShiftConstrainedCropBox: (
+        state: {
+            action?: string;
+            startCropData?: { x: number; y: number; width: number; height: number } | null;
+            startPoint?: { x: number; y: number } | null;
+            currentPoint?: { x: number; y: number } | null;
+            originalWidth: number;
+            originalHeight: number;
         }
     ) => { x: number; y: number; width: number; height: number } | null;
     getMarqueeDblClickToggleAction: (
@@ -149,6 +160,48 @@ suite('Marquee double-click logic', () => {
             originalHeight: OH
         });
         assert.deepStrictEqual(box, { x: 200, y: 180, width: 80, height: 80 });
+    });
+
+    test('resolveDragMarqueeBox locks to axis and diagonal directions with shift', () => {
+        const horizontal = logic.resolveDragMarqueeBox({
+            startPoint: { x: 200, y: 180 },
+            currentPoint: { x: 280, y: 190 },
+            originalWidth: OW,
+            originalHeight: OH,
+            shiftKey: true
+        });
+        assert.deepStrictEqual(horizontal, { x: 200, y: 180, width: 80, height: 1 });
+
+        const diagonal = logic.resolveDragMarqueeBox({
+            startPoint: { x: 200, y: 180 },
+            currentPoint: { x: 270, y: 250 },
+            originalWidth: OW,
+            originalHeight: OH,
+            shiftKey: true
+        });
+        assert.deepStrictEqual(diagonal, { x: 200, y: 180, width: 70, height: 70 });
+    });
+
+    test('resolveShiftConstrainedCropBox constrains native move and resize drags', () => {
+        const moved = logic.resolveShiftConstrainedCropBox({
+            action: 'move',
+            startCropData: partialCrop,
+            startPoint: { x: 150, y: 120 },
+            currentPoint: { x: 180, y: 135 },
+            originalWidth: OW,
+            originalHeight: OH
+        });
+        assert.deepStrictEqual(moved, { x: 130, y: 80, width: 400, height: 300 });
+
+        const resized = logic.resolveShiftConstrainedCropBox({
+            action: 'se',
+            startCropData: partialCrop,
+            startPoint: { x: 550, y: 420 },
+            currentPoint: { x: 590, y: 430 },
+            originalWidth: OW,
+            originalHeight: OH
+        });
+        assert.deepStrictEqual(resized, { x: 100, y: 50, width: 490, height: 370 });
     });
 
     test('canHandleMarqueeDblClick rejects inactive modes and outside canvas', () => {

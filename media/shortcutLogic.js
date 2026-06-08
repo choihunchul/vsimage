@@ -43,6 +43,9 @@ function getShortcutAction(event) {
     if (!mod && !event.altKey && key === '-') {
         return 'zoomOut';
     }
+    if (!hasToolModifier(event) && isLetter(event, 'v')) {
+        return 'move';
+    }
     if (!hasToolModifier(event) && isLetter(event, 'm')) {
         return 'marquee';
     }
@@ -70,11 +73,33 @@ function isEyedropperHoldCode(code) {
     return code === 'KeyI';
 }
 
+const HOST_BRIDGED_ACTIONS = new Set([
+    'save',
+    'undo',
+    'copy',
+    'selectAll',
+    'crop',
+    'marquee',
+    'move',
+    'mosaic',
+    'rotateLeft',
+    'rotateRight',
+    'zoomIn',
+    'zoomOut',
+    'fitViewport',
+    'actualPixels'
+]);
+
+function isHostBridgedAction(action) {
+    return Boolean(action) && HOST_BRIDGED_ACTIONS.has(action);
+}
+
 const api = {
     getShortcutAction,
     canRunWhenInputFocused,
     isPanHoldCode,
-    isEyedropperHoldCode
+    isEyedropperHoldCode,
+    isHostBridgedAction
 };
 
 if (typeof module !== 'undefined' && module.exports) {

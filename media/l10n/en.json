@@ -26,6 +26,7 @@
   "sidebar.name": "Name:",
   "sidebar.dimensions": "Dimensions:",
   "sidebar.fileSize": "File size:",
+  "sidebar.fileFormat": "File format:",
   "sidebar.autoCollapse": "Auto collapse",
   "sidebar.history": "🕘 History",
   "sidebar.historyHint": "Click a snapshot to restore that state.",
@@ -86,6 +87,7 @@
   "copyModal.formatPng": "PNG",
   "copyModal.formatJpeg": "JPEG",
   "copyModal.formatWebp": "WebP",
+  "copyModal.formatGif": "GIF",
 
   "mosaicModal.title": "Mosaic Selection",
   "mosaicModal.close": "Close",
@@ -99,6 +101,7 @@
   "shortcuts.copyImage": "Copy Image",
   "shortcuts.selectAll": "Select All",
   "shortcuts.pan": "Pan Image",
+  "shortcuts.moveTool": "Move Selection",
   "shortcuts.cursor": "No action",
   "shortcuts.zoomLoupe": "Magnify Area (on canvas)",
   "shortcuts.dblClickImageKey": "Double-click",
@@ -119,6 +122,10 @@
   "shortcuts.moveMarquee": "Move Crop Selection",
   "shortcuts.moveMarqueeLarge": "Move Crop Selection by 10 px",
   "shortcuts.marqueeSelect": "Marquee Select",
+  "toolOptions.moveSelection": "Drag inside the marquee to adjust position. Hold Shift to lock movement to horizontal, vertical, or 45° diagonals. Press Enter or Apply Move to commit; the original area is cleared.",
+  "toolOptions.movePanHint": "Hold Space or H to pan the canvas while this tool is active.",
+  "toolOptions.applyMoveSelection": "Apply Move",
+  "toast.moveSelectionApplied": "Selection pixels moved. Press Ctrl+Z to undo.",
   "shortcuts.toggleCrop": "Toggle Crop / Marquee",
   "shortcuts.magicWand": "Magic Wand Select",
   "selection.width": "Width",
@@ -169,5 +176,6 @@
   "edit.mosaic": "Mosaic",
   "edit.fillSelection": "Fill Selection",
   "edit.eraseSelection": "Erase Selection",
+  "edit.moveSelection": "Move Selection",
   "edit.magicWandSelect": "Magic Wand Select"
 }

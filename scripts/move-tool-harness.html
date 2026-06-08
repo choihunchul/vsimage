@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>vsimage move tool harness</title>
+  <link href="/media/cropper.min.css" rel="stylesheet" />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #workspace { width: 640px; height: 480px; position: relative; }
+    #result { padding: 12px; white-space: pre-wrap; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div id="workspace" class="canvas-workspace">
+    <img id="image" alt="test" />
+  </div>
+  <pre id="result">pending</pre>
+  <script src="/media/cropper.min.js"></script>
+  <script src="/media/selectionMoveLogic.js"></script>
+  <script>
+    const resultEl = document.getElementById('result');
+    const logs = [];
+    function log(line) {
+      logs.push(line);
+      resultEl.textContent = logs.join('\n');
+    }
+
+    const selectionMoveLogic = window.VsimageSelectionMoveLogic;
+    const imageEl = document.getElementById('image');
+    const seed = document.createElement('canvas');
+    seed.width = 8;
+    seed.height = 8;
+    const sctx = seed.getContext('2d');
+    sctx.fillStyle = '#3366cc';
+    sctx.fillRect(0, 0, 8, 8);
+    sctx.fillStyle = '#ffcc00';
+    sctx.fillRect(1, 1, 4, 4);
+    const png = seed.toDataURL('image/png');
+    let cropper;
+    let originalWidth = 0;
+    let originalHeight = 0;
+    let activeTool = 'cursor';
+
+    function isSelectionMoveToolActive() {
+      return activeTool === 'move' && !!(cropper && cropper.cropped);
+    }
+
+    function buildImageWithMovedSelectionPixels(sourceBounds, destBounds) {
+      const canvas = document.createElement('canvas');
+      canvas.width = originalWidth;
+      canvas.height = originalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(imageEl, 0, 0);
+      const sx = Math.round(sourceBounds.x);
+      const sy = Math.round(sourceBounds.y);
+      const sw = Math.round(sourceBounds.width);
+      const sh = Math.round(sourceBounds.height);
+      const patch = document.createElement('canvas');
+      patch.width = sw;
+      patch.height = sh;
+      patch.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      ctx.clearRect(sx, sy, sw, sh);
+      ctx.drawImage(patch, Math.round(destBounds.x), Math.round(destBounds.y));
+      return canvas.toDataURL();
+    }
+
+    imageEl.onload = () => {
+      originalWidth = imageEl.naturalWidth;
+      originalHeight = imageEl.naturalHeight;
+      cropper = new Cropper(imageEl, {
+        aspectRatio: NaN,
+        viewMode: 1,
+        background: false,
+        responsive: false,
+        autoCrop: false,
+        zoomOnWheel: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        ready() {
+          cropper.crop();
+          cropper.setData({ x: 1, y: 1, width: 4, height: 4 });
+          const before = cropper.getData(true);
+          log(`before: ${JSON.stringify(before)}`);
+
+          activeTool = 'move';
+          cropper.setDragMode('none');
+          log(`selectionMoveActive=${isSelectionMoveToolActive()}`);
+
+          const sourceBounds = { ...before };
+          const destBounds = selectionMoveLogic.computeMovedBounds(sourceBounds, 2, 1, originalWidth, originalHeight);
+          const newSrc = buildImageWithMovedSelectionPixels(sourceBounds, destBounds);
+          imageEl.onload = () => {
+            const verify = document.createElement('canvas');
+            verify.width = originalWidth;
+            verify.height = originalHeight;
+            const vctx = verify.getContext('2d');
+            vctx.drawImage(imageEl, 0, 0);
+            const srcEmpty = vctx.getImageData(1, 1, 1, 1).data[3];
+            const destFilled = vctx.getImageData(3, 2, 1, 1).data[3];
+            log(`destBounds: ${JSON.stringify(destBounds)}`);
+            log(`sourceCleared=${srcEmpty === 0}`);
+            log(`destFilled=${destFilled > 0}`);
+            log(srcEmpty === 0 && destFilled > 0 ? 'PASS' : 'FAIL');
+            window.__harnessDone = srcEmpty === 0 && destFilled > 0;
+          };
+          imageEl.src = newSrc;
+        }
+      });
+    };
+
+    imageEl.src = png;
+  </script>
+</body>
+</html>

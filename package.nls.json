@@ -3,6 +3,7 @@
   "extension.description": "Premium image editor to crop, resize, and convert images inside VS Code with clipboard paste.",
   "command.newEditor.title": "Create Empty Image Editor",
   "command.openWithEditor.title": "Edit with VS Code Image Editor",
+  "command.debugState.title": "Show vsimage Debug State",
   "customEditor.displayName": "VS Code Image Editor",
   "untitledPanel.title": "Untitled Image Editor",
   "toast.saved": "Image saved successfully.",

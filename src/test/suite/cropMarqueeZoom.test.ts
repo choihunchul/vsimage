@@ -3,6 +3,7 @@ import * as path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.js')) as {
+    hasActiveMarqueeSelection: (cropped: boolean, cropData: { x: number; y: number; width: number; height: number } | null) => boolean;
     isValidNaturalCropSnapshot: (data: { x: number; y: number; width: number; height: number } | null) => boolean;
     shouldSnapshotCropForZoom: (
         cropped: boolean,
@@ -21,6 +22,13 @@ const logic = require(path.join(__dirname, '../../../../media/cropMarqueeLogic.j
 const SAMPLE_CROP = { x: 100, y: 50, width: 400, height: 300 };
 
 suite('Crop marquee zoom', () => {
+    test('hasActiveMarqueeSelection requires a cropped box with positive size', () => {
+        assert.strictEqual(logic.hasActiveMarqueeSelection(false, SAMPLE_CROP), false);
+        assert.strictEqual(logic.hasActiveMarqueeSelection(true, null), false);
+        assert.strictEqual(logic.hasActiveMarqueeSelection(true, { x: 0, y: 0, width: 0, height: 10 }), false);
+        assert.strictEqual(logic.hasActiveMarqueeSelection(true, SAMPLE_CROP), true);
+    });
+
     test('isValidNaturalCropSnapshot rejects empty or zero-size crop', () => {
         assert.strictEqual(logic.isValidNaturalCropSnapshot(null), false);
         assert.strictEqual(logic.isValidNaturalCropSnapshot({ x: 0, y: 0, width: 0, height: 100 }), false);

@@ -49,6 +49,37 @@
         lblFileSize.textContent = formatFileSize(parseFileSizeBytes(bytes));
     }
 
+    function getImageFormatLabel(mimeType) {
+        switch (mimeType) {
+            case 'image/jpeg':
+                return t('copyModal.formatJpeg');
+            case 'image/webp':
+                return t('copyModal.formatWebp');
+            case 'image/gif':
+                return t('copyModal.formatGif');
+            case 'image/png':
+                return t('copyModal.formatPng');
+            default:
+                return '—';
+        }
+    }
+
+    function setFileFormatLabel(mimeType) {
+        if (!lblFileFormat) {
+            return;
+        }
+        const normalized = String(mimeType || '').trim();
+        lblFileFormat.textContent = normalized ? getImageFormatLabel(normalized) : '—';
+    }
+
+    function parseMimeTypeFromDataUrl(dataUrl) {
+        if (typeof dataUrl !== 'string') {
+            return '';
+        }
+        const match = /^data:([^;]+);/i.exec(dataUrl);
+        return match ? match[1] : '';
+    }
+
     /** applyI18n rebuilds percent labels; always resolve spans by id (no cached refs). */
     function setPercentSpan(spanId, value) {
         const el = document.getElementById(spanId);
@@ -125,8 +156,138 @@
         syncPercentLabelsFromInputs();
     }
 
+    let editorToastTimer = null;
+    let copyResultTimer = null;
+
+    function getEditorToastEl() {
+        return document.getElementById('editorToast');
+    }
+
+    function showEditorToast(text, options = {}) {
+        const editorToast = getEditorToastEl();
+        if (!editorToast) {
+            return;
+        }
+        const message = String(text || '').trim();
+        if (!message) {
+            return;
+        }
+        editorToast.textContent = message;
+        editorToast.classList.toggle('is-error', !!options.isError);
+        editorToast.classList.add('is-visible');
+        if (editorToastTimer) {
+            clearTimeout(editorToastTimer);
+        }
+        editorToastTimer = setTimeout(() => {
+            editorToast.classList.remove('is-visible', 'is-error');
+        }, 2600);
+    }
+
+    function notifyToast(text, options = {}) {
+        const message = String(text || '').trim();
+        if (!message) {
+            return;
+        }
+        showEditorToast(message, options);
+        vscode.postMessage({ command: 'show-toast', text: message });
+    }
+
+    function logCopyDebug(text) {
+        vscode.postMessage({ command: 'copy-debug', text: String(text) });
+    }
+
+    function dataUrlToBlob(dataUrl) {
+        const parts = /^data:([^;,]+);base64,(.+)$/i.exec(String(dataUrl || ''));
+        if (!parts) {
+            return null;
+        }
+        const binary = atob(parts[2]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: parts[1] });
+    }
+
+    function canvasToBlob(canvas, format, quality, callback) {
+        let settled = false;
+        function finish(blob) {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            callback(blob);
+        }
+
+        const fallbackFromDataUrl = (reason) => {
+            logCopyDebug(reason);
+            try {
+                finish(dataUrlToBlob(canvas.toDataURL(format, quality)));
+            } catch (err) {
+                logCopyDebug(`toDataURL fallback failed: ${err}`);
+                finish(null);
+            }
+        };
+
+        if (!canvas.toBlob) {
+            fallbackFromDataUrl('canvas.toBlob unavailable');
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            fallbackFromDataUrl('canvas.toBlob timeout');
+        }, 250);
+
+        canvas.toBlob((blob) => {
+            clearTimeout(timer);
+            if (blob) {
+                finish(blob);
+                return;
+            }
+            fallbackFromDataUrl('canvas.toBlob returned empty blob');
+        }, format, quality);
+    }
+
+    function beginCopyResultWatch() {
+        if (copyResultTimer) {
+            clearTimeout(copyResultTimer);
+        }
+        copyResultTimer = setTimeout(() => {
+            copyResultTimer = null;
+            notifyToast(t('toast.clipboardFailed', { error: 'timeout' }), { isError: true });
+        }, 8000);
+    }
+
+    function clearCopyResultWatch() {
+        if (!copyResultTimer) {
+            return;
+        }
+        clearTimeout(copyResultTimer);
+        copyResultTimer = null;
+    }
+
+    function getHostPlatform() {
+        const fromDataset = document.body && document.body.dataset
+            ? String(document.body.dataset.hostPlatform || '').trim()
+            : '';
+        if (fromDataset) {
+            return fromDataset;
+        }
+        const ua = String(navigator.userAgent || '');
+        if (/Macintosh|Mac OS X/i.test(ua)) {
+            return 'darwin';
+        }
+        if (/Windows/i.test(ua)) {
+            return 'win32';
+        }
+        if (/Linux/i.test(ua)) {
+            return 'linux';
+        }
+        return '';
+    }
+
     function usesMacShortcuts() {
-        const hostPlatform = document.body && document.body.dataset ? document.body.dataset.hostPlatform : '';
+        const hostPlatform = getHostPlatform();
         if (hostPlatform === 'darwin') {
             return true;
         }
@@ -134,6 +295,132 @@
             return false;
         }
         return /Mac|iPhone|iPod|iPad/i.test(navigator.platform) || navigator.userAgent.includes('Mac');
+    }
+
+    function shouldUseHostClipboardCopy() {
+        const hostPlatform = getHostPlatform();
+        return hostPlatform === 'darwin' || hostPlatform === 'win32';
+    }
+
+    function resolveHostClipboardExportFormat(format) {
+        if (getHostPlatform() === 'win32' && format === 'image/webp') {
+            return 'image/png';
+        }
+        return format;
+    }
+
+    function ensureCopyFocusTarget() {
+        if (workspace && workspace.style.display !== 'none') {
+            workspace.focus({ preventScroll: true });
+        }
+    }
+
+    function readBlobAsArrayBuffer(blob, onSuccess, onError) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            if (!reader.result) {
+                onError(new Error('read failed'));
+                return;
+            }
+            onSuccess(reader.result);
+        };
+        reader.onerror = () => {
+            onError(reader.error || new Error('read failed'));
+        };
+        reader.readAsArrayBuffer(blob);
+    }
+
+    function readBlobAsDataUrl(blob, onSuccess, onError) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            if (!reader.result) {
+                onError(new Error('read failed'));
+                return;
+            }
+            onSuccess(reader.result);
+        };
+        reader.onerror = () => {
+            onError(reader.error || new Error('read failed'));
+        };
+        reader.readAsDataURL(blob);
+    }
+
+    function requestHostClipboardCopy(arrayBuffer, mimeType, successText) {
+        if (!arrayBuffer) {
+            notifyToast(t('toast.noImageCopy'), { isError: true });
+            return;
+        }
+        beginCopyResultWatch();
+        vscode.postMessage({ command: 'host-clipboard-request' });
+        vscode.postMessage({
+            command: 'copy-image',
+            arrayBuffer,
+            mimeType,
+            successText
+        });
+        hideCopyModal();
+    }
+
+    function requestHostClipboardCopyFromBlob(blob, format, successText) {
+        if (!blob) {
+            notifyToast(t('toast.noImageCopy'), { isError: true });
+            return;
+        }
+
+        const mimeType = blob.type || format;
+        readBlobAsDataUrl(
+            blob,
+            (dataUrl) => {
+                beginCopyResultWatch();
+                vscode.postMessage({ command: 'host-clipboard-request' });
+                vscode.postMessage({
+                    command: 'copy-image',
+                    dataUrl,
+                    mimeType,
+                    successText
+                });
+                hideCopyModal();
+            },
+            () => {
+                readBlobAsArrayBuffer(
+                    blob,
+                    (arrayBuffer) => {
+                        requestHostClipboardCopy(arrayBuffer, mimeType, successText);
+                    },
+                    (err) => {
+                        notifyToast(t('toast.clipboardFailed', { error: String(err) }), { isError: true });
+                    }
+                );
+            }
+        );
+    }
+
+    function copyBlobViaWebviewClipboard(blob, toastText, onFallback) {
+        const clipboard = navigator.clipboard;
+        const ClipboardItemCtor = window.ClipboardItem;
+        if (!clipboardLogic.canWriteClipboardImage(clipboard && clipboard.write, ClipboardItemCtor)) {
+            if (onFallback) {
+                onFallback();
+                return;
+            }
+            notifyToast(t('toast.clipboardUnavailable'), { isError: true });
+            return;
+        }
+
+        clipboard.write([
+            new ClipboardItemCtor({
+                [blob.type]: blob
+            })
+        ]).then(() => {
+            hideCopyModal();
+            notifyToast(toastText);
+        }).catch((err) => {
+            if (onFallback) {
+                onFallback();
+                return;
+            }
+            notifyToast(t('toast.clipboardFailed', { error: String(err) }), { isError: true });
+        });
     }
 
     function formatShortcut(spec) {
@@ -344,6 +631,7 @@
     const btnApplyCrop = document.getElementById('btnApplyCrop');
     const btnToolMosaic = document.getElementById('btnToolMosaic');
     const btnApplyMosaic = document.getElementById('btnApplyMosaic');
+    const btnApplyMoveSelection = document.getElementById('btnApplyMoveSelection');
     const btnMosaicCancel = document.getElementById('btnMosaicCancel');
     const btnMosaicConfirm = document.getElementById('btnMosaicConfirm');
     const btnReset = document.getElementById('btnReset');
@@ -378,6 +666,7 @@
     let pendingStartupFile = null;
     let isBootstrapComplete = false;
     let suppressCropCheckboxToolSync = false;
+    let suppressCropCheckboxPreserveSelection = false;
     let initialImageSrc = '';
     let isEyedropperActive = false;
     let isColorPickerMode = false;
@@ -405,6 +694,9 @@
     let mosaicPreviewCtx = null;
     let mosaicPreviewSourceCanvas = null;
     let mosaicPreviewRaf = null;
+    let pixelMovePreviewCanvas = null;
+    let pixelMovePreviewCtx = null;
+    let pixelMovePreviewRaf = null;
     /** Natural-image crop rect; kept in sync on crop changes, not re-read after zoom. */
     let lastNaturalCropData = null;
     const eyedropperTooltip = document.getElementById('eyedropperTooltip');
@@ -444,11 +736,13 @@
 
     const lblDimensions = document.getElementById('lblDimensions');
     const lblFileSize = document.getElementById('lblFileSize');
+    const lblFileFormat = document.getElementById('lblFileFormat');
     const lblMarqueeWidth = document.getElementById('lblMarqueeWidth');
     const lblMarqueeHeight = document.getElementById('lblMarqueeHeight');
     const lblMarqueeX = document.getElementById('lblMarqueeX');
     const lblMarqueeY = document.getElementById('lblMarqueeY');
     let currentFileSizeBytes = parseFileSizeBytes(document.body.dataset.initialFileSizeBytes);
+    let currentFileMimeType = document.body.dataset.initialFileMime || '';
 
     function setLoadingState(isLoading) {
         if (!webviewLoadingOverlay) {
@@ -742,7 +1036,9 @@
         clearNaturalCropData();
         initialImageSrc = null;
         currentFileSizeBytes = null;
+        currentFileMimeType = 'image/png';
         setFileSizeLabel(currentFileSizeBytes);
+        setFileFormatLabel(currentFileMimeType);
         imageEl.removeAttribute('src');
         imageEl.src = '';
         hideEditorChrome();
@@ -750,7 +1046,7 @@
         workspace.style.display = 'none';
     }
 
-    function revertToSource(src, fileSizeBytes) {
+    function revertToSource(src, fileSizeBytes, mimeType) {
         historyStack = [];
         renderHistoryPanel();
         endEyedropper();
@@ -762,7 +1058,9 @@
         endMagicWandMode(false);
         initialImageSrc = src;
         currentFileSizeBytes = parseFileSizeBytes(fileSizeBytes);
+        currentFileMimeType = mimeType || parseMimeTypeFromDataUrl(src) || currentFileMimeType;
         setFileSizeLabel(currentFileSizeBytes);
+        setFileFormatLabel(currentFileMimeType);
         setActiveTool(toolRailLogic.DEFAULT_ACTIVE_TOOL || 'cursor');
         initEditor(src, { preserveInitialSrc: true });
         vscode.postMessage({ command: 'show-toast', text: t('toast.reverted') });
@@ -775,7 +1073,7 @@
                 respondWithImageData(message.requestId, message.mimeType);
                 break;
             case 'revert-document':
-                revertToSource(message.src, message.fileSizeBytes);
+                revertToSource(message.src, message.fileSizeBytes, message.mimeType);
                 break;
             case 'revert-untitled':
                 revertUntitledEditor();
@@ -784,6 +1082,10 @@
                 performUndo({ fromHost: true });
                 break;
             case 'run-shortcut':
+                if (shouldSkipDuplicateHostShortcut(message.action)) {
+                    vscode.postMessage({ command: 'shortcut-ack', action: message.action });
+                    break;
+                }
                 vscode.postMessage({ command: 'shortcut-ack', action: message.action });
                 runShortcutAction(message.action);
                 break;
@@ -792,6 +1094,17 @@
                     currentFileSizeBytes = parseFileSizeBytes(message.fileSizeBytes);
                     setFileSizeLabel(currentFileSizeBytes);
                 }
+                if (typeof message.mimeType === 'string' && message.mimeType) {
+                    currentFileMimeType = message.mimeType;
+                    setFileFormatLabel(currentFileMimeType);
+                }
+                break;
+            case 'copy-image-result':
+                clearCopyResultWatch();
+                notifyToast(
+                    message.text || (message.ok ? t('toast.imageCopied') : t('toast.clipboardUnavailable')),
+                    { isError: !message.ok }
+                );
                 break;
         }
     });
@@ -811,6 +1124,9 @@
     let isHandPressed = false;
     let marqueeGestureState = null;
     let marqueeCreateDragState = null;
+    let pixelMoveDragState = null;
+    let pixelMovePendingState = null;
+    let selectionPixelAnchor = null;
     let isZLoupeActive = false;
     let isZLoupeDragging = false;
     let zLoupeDragStart = null;
@@ -842,11 +1158,23 @@
         if (!cropper) {
             return;
         }
+
+        const lockCropBoxMove = Boolean(pixelMoveDragState || isSelectionMoveToolActive());
+        cropper.options.cropBoxMovable = !lockCropBoxMove;
+        cropper.options.cropBoxResizable = !pixelMoveDragState;
+
         if (marqueeCreateDragState) {
             cropper.setDragMode('none');
             return;
         }
         if (marqueeGestureState) {
+            return;
+        }
+        if (lockCropBoxMove) {
+            cropper.setDragMode('none');
+            if (typeof cropper.render === 'function') {
+                cropper.render();
+            }
             return;
         }
         if (mosaicPreviewState) {
@@ -861,7 +1189,36 @@
     }
 
     function isPanShortcutPressed() {
+        if (activeTool === 'move' && hasActiveMarqueeSelection()) {
+            return isSpacePressed || isHandPressed;
+        }
         return activeTool === 'move' || isSpacePressed || isHandPressed;
+    }
+
+    function isSelectionMoveToolActive() {
+        return activeTool === 'move' && !!(cropper && cropper.cropped);
+    }
+
+    function isImplicitFullImageMoveSelection() {
+        return isSelectionMoveToolActive()
+            && !!(chkEnableCrop && !chkEnableCrop.checked)
+            && isMarqueeFullImageNatural();
+    }
+
+    function shouldShowCropMarqueeOverlay() {
+        if (isImplicitFullImageMoveSelection()) {
+            return false;
+        }
+        const isEnabled = !!(chkEnableCrop && chkEnableCrop.checked);
+        return isEnabled || hasActiveMarqueeSelection();
+    }
+
+    function syncMoveToolWorkspaceClasses() {
+        if (!workspace) {
+            return;
+        }
+        workspace.classList.toggle('selection-move-tool', isSelectionMoveToolActive());
+        workspace.classList.toggle('implicit-full-image-move', isImplicitFullImageMoveSelection());
     }
 
     function activateMarqueeOnDrag(startPoint) {
@@ -894,7 +1251,8 @@
             startPoint: marqueeCreateDragState.startPoint,
             currentPoint,
             originalWidth,
-            originalHeight
+            originalHeight,
+            shiftKey: !!e.shiftKey
         });
 
         if (!nextBox) {
@@ -925,8 +1283,30 @@
     const shortcutLogic = globalThis.VsimageShortcutLogic || {
         getShortcutAction: () => null,
         isPanHoldCode: (code) => code === 'Space' || code === 'KeyH',
-        isEyedropperHoldCode: (code) => code === 'KeyI'
+        isEyedropperHoldCode: (code) => code === 'KeyI',
+        isHostBridgedAction: () => false
     };
+    const HOST_SHORTCUT_DEDUPE_MS = 300;
+    let lastLocalShortcutHandled = null;
+
+    function markLocalShortcutHandled(action) {
+        if (!shortcutLogic.isHostBridgedAction(action)) {
+            return;
+        }
+        lastLocalShortcutHandled = { action, at: performance.now() };
+    }
+
+    function shouldSkipDuplicateHostShortcut(action) {
+        const last = lastLocalShortcutHandled;
+        if (!last || last.action !== action) {
+            return false;
+        }
+        if (performance.now() - last.at > HOST_SHORTCUT_DEDUPE_MS) {
+            return false;
+        }
+        lastLocalShortcutHandled = null;
+        return true;
+    }
     const zoomLogic = globalThis.VsimageZoomLogic || {
         getImageZoomRatioFromData: (data) => (data && data.naturalWidth ? data.width / data.naturalWidth : null),
         zoomRatioToPercent: (r) => Math.round(Number(r) * 100),
@@ -1206,7 +1586,26 @@
         }
     };
     const magicWandLogic = globalThis.VsimageMagicWandLogic;
-    const clipboardLogic = globalThis.VsimageClipboardLogic;
+    const clipboardLogic = globalThis.VsimageClipboardLogic || {
+        shouldShowQuality(format) {
+            return format === 'image/jpeg' || format === 'image/webp';
+        },
+        resolveCopyFormat(format) {
+            return format === 'image/jpeg' || format === 'image/webp' || format === 'image/png'
+                ? format
+                : 'image/png';
+        },
+        resolveCopyQuality(value, fallback) {
+            const parsed = parseInt(value, 10);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        },
+        resolveSelectionOnly(hasSelection) {
+            return !!hasSelection;
+        },
+        canWriteClipboardImage(clipboardWrite, clipboardItemCtor) {
+            return typeof clipboardWrite === 'function' && typeof clipboardItemCtor === 'function';
+        }
+    };
     const saveExportLogic = globalThis.VsimageSaveExportLogic || {
         resolveSaveStart: (type, documentEditor) => (
             type === 'save' && documentEditor
@@ -1316,6 +1715,9 @@
         if (!detail || !detail.originalEvent || !cropper) {
             return;
         }
+        if (isSelectionMoveToolActive()) {
+            return;
+        }
 
         marqueeGestureState = {
             action: detail.action,
@@ -1328,6 +1730,9 @@
         if (!marqueeGestureState || !cropper || !e.detail || !e.detail.originalEvent) {
             return;
         }
+        if (isSelectionMoveToolActive()) {
+            return;
+        }
 
         const originalEvent = e.detail.originalEvent;
         const currentPoint = getClampedImagePointFromEvent(originalEvent);
@@ -1335,7 +1740,7 @@
             return;
         }
 
-        const nextBox = cropMarqueeLogic.resolveModifierMarqueeBox({
+        let nextBox = cropMarqueeLogic.resolveModifierMarqueeBox({
             startCropData: marqueeGestureState.startCropData,
             startPoint: marqueeGestureState.startPoint,
             currentPoint,
@@ -1345,6 +1750,18 @@
             altKey: !!originalEvent.altKey,
             spacePressed: isSpacePressed
         });
+
+        if (!nextBox && originalEvent.shiftKey && marqueeGestureState.startCropData
+            && cropMarqueeLogic.resolveShiftConstrainedCropBox) {
+            nextBox = cropMarqueeLogic.resolveShiftConstrainedCropBox({
+                action: marqueeGestureState.action,
+                startCropData: marqueeGestureState.startCropData,
+                startPoint: marqueeGestureState.startPoint,
+                currentPoint,
+                originalWidth,
+                originalHeight
+            });
+        }
 
         if (!nextBox) {
             return;
@@ -1406,7 +1823,15 @@
     }
 
     function ensureCropMarqueeForKeyboard() {
-        if (!cropper || !chkEnableCrop.checked) {
+        if (!cropper) {
+            return false;
+        }
+
+        if (hasActiveMarqueeSelection()) {
+            return true;
+        }
+
+        if (!chkEnableCrop.checked) {
             return false;
         }
 
@@ -1414,7 +1839,7 @@
             initMarqueeToFullImage();
         }
 
-        return cropper.cropped;
+        return hasActiveMarqueeSelection();
     }
 
     function focusCropKeyboardTarget() {
@@ -1423,7 +1848,497 @@
         }
     }
 
+    const selectionMoveLogic = globalThis.VsimageSelectionMoveLogic || {
+        computeMovedBounds: (source, dx, dy, w, h) => ({
+            x: source.x + dx,
+            y: source.y + dy,
+            width: source.width,
+            height: source.height
+        }),
+        hasPixelMoveDelta: (dx, dy) => Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5,
+        constrainPixelMoveDelta: (dx, dy) => ({ deltaX: dx, deltaY: dy })
+    };
+
+    function resolvePixelMoveDragDelta(currentPoint, dragState, shiftKey) {
+        let deltaX = (currentPoint.x - dragState.startPoint.x) + (dragState.baseDestOffsetX || 0);
+        let deltaY = (currentPoint.y - dragState.startPoint.y) + (dragState.baseDestOffsetY || 0);
+        if (shiftKey && selectionMoveLogic.constrainPixelMoveDelta) {
+            const constrained = selectionMoveLogic.constrainPixelMoveDelta(deltaX, deltaY);
+            deltaX = constrained.deltaX;
+            deltaY = constrained.deltaY;
+        }
+        return { deltaX, deltaY };
+    }
+
+    function ensurePixelMovePreviewCanvas() {
+        if (!pixelMovePreviewCanvas) {
+            pixelMovePreviewCanvas = document.createElement('canvas');
+            pixelMovePreviewCanvas.className = 'pixel-move-preview-canvas';
+            pixelMovePreviewCanvas.setAttribute('aria-hidden', 'true');
+        }
+        if (pixelMovePreviewCanvas && cropper && cropper.cropper) {
+            const cropperCanvasHost = cropper.cropper.querySelector('.cropper-canvas');
+            if (cropperCanvasHost && pixelMovePreviewCanvas.parentElement !== cropperCanvasHost) {
+                cropperCanvasHost.appendChild(pixelMovePreviewCanvas);
+            }
+        }
+        if (pixelMovePreviewCanvas && !pixelMovePreviewCtx) {
+            pixelMovePreviewCtx = pixelMovePreviewCanvas.getContext('2d');
+        }
+        return !!(pixelMovePreviewCanvas && pixelMovePreviewCtx);
+    }
+
+    function hidePixelMovePreview() {
+        if (pixelMovePreviewRaf !== null) {
+            cancelAnimationFrame(pixelMovePreviewRaf);
+            pixelMovePreviewRaf = null;
+        }
+        if (pixelMovePreviewCanvas) {
+            pixelMovePreviewCanvas.style.display = 'none';
+        }
+    }
+
+    function capturePixelMovePatch(sourceBounds) {
+        if (!imageEl || !sourceBounds) {
+            return null;
+        }
+        const sw = Math.max(1, Math.round(sourceBounds.width));
+        const sh = Math.max(1, Math.round(sourceBounds.height));
+        const patch = document.createElement('canvas');
+        patch.width = sw;
+        patch.height = sh;
+        const sx = Math.round(sourceBounds.x);
+        const sy = Math.round(sourceBounds.y);
+        patch.getContext('2d').drawImage(imageEl, sx, sy, sw, sh, 0, 0, sw, sh);
+        return patch;
+    }
+
+    function fillPixelMoveSourceHole(ctx, x, y, width, height, cellSize = 6) {
+        const maxX = x + width;
+        const maxY = y + height;
+        for (let py = y; py < maxY; py += cellSize) {
+            for (let px = x; px < maxX; px += cellSize) {
+                const odd = (Math.floor((px - x) / cellSize) + Math.floor((py - y) / cellSize)) % 2;
+                ctx.fillStyle = odd ? 'rgba(255, 255, 255, 0.42)' : 'rgba(0, 0, 0, 0.42)';
+                ctx.fillRect(px, py, Math.min(cellSize, maxX - px), Math.min(cellSize, maxY - py));
+            }
+        }
+    }
+
+    function resolvePixelMovePatchCanvas() {
+        if (pixelMoveDragState && pixelMoveDragState.patchCanvas) {
+            return pixelMoveDragState.patchCanvas;
+        }
+        if (pixelMovePendingState && pixelMovePendingState.patchCanvas) {
+            return pixelMovePendingState.patchCanvas;
+        }
+        return null;
+    }
+
+    function hasPendingSelectionPixelMove() {
+        if (!pixelMovePendingState || !pixelMovePendingState.sourceBounds || !pixelMovePendingState.destBounds) {
+            return false;
+        }
+        const sourceBounds = pixelMovePendingState.sourceBounds;
+        const destBounds = pixelMovePendingState.destBounds;
+        return selectionMoveLogic.hasPixelMoveDelta(
+            destBounds.x - sourceBounds.x,
+            destBounds.y - sourceBounds.y
+        );
+    }
+
+    function syncMoveApplyButtonState() {
+        if (!btnApplyMoveSelection) {
+            return;
+        }
+        btnApplyMoveSelection.disabled = !(isSelectionMoveToolActive() && hasPendingSelectionPixelMove());
+    }
+
+    function renderPixelMovePreview(sourceBounds, destBounds) {
+        const patchCanvas = resolvePixelMovePatchCanvas();
+        if (!patchCanvas || !cropper || !sourceBounds || !destBounds || !ensurePixelMovePreviewCanvas()) {
+            hidePixelMovePreview();
+            return;
+        }
+
+        const imageData = cropper.getImageData();
+        if (!imageData || !imageData.width || !imageData.height || !imageData.naturalWidth || !imageData.naturalHeight) {
+            hidePixelMovePreview();
+            return;
+        }
+
+        const previewWidth = Math.max(1, Math.round(imageData.width));
+        const previewHeight = Math.max(1, Math.round(imageData.height));
+        const scaleX = previewWidth / imageData.naturalWidth;
+        const scaleY = previewHeight / imageData.naturalHeight;
+
+        pixelMovePreviewCanvas.width = previewWidth;
+        pixelMovePreviewCanvas.height = previewHeight;
+        pixelMovePreviewCanvas.style.left = `${Math.round(imageData.left || 0)}px`;
+        pixelMovePreviewCanvas.style.top = `${Math.round(imageData.top || 0)}px`;
+        pixelMovePreviewCanvas.style.width = `${previewWidth}px`;
+        pixelMovePreviewCanvas.style.height = `${previewHeight}px`;
+        pixelMovePreviewCanvas.style.display = 'block';
+
+        const sourceRect = {
+            x: Math.round(sourceBounds.x * scaleX),
+            y: Math.round(sourceBounds.y * scaleY),
+            width: Math.max(1, Math.round(sourceBounds.width * scaleX)),
+            height: Math.max(1, Math.round(sourceBounds.height * scaleY))
+        };
+        const destRect = {
+            x: Math.round(destBounds.x * scaleX),
+            y: Math.round(destBounds.y * scaleY),
+            width: Math.max(1, Math.round(destBounds.width * scaleX)),
+            height: Math.max(1, Math.round(destBounds.height * scaleY))
+        };
+
+        const ctx = pixelMovePreviewCtx;
+        ctx.clearRect(0, 0, previewWidth, previewHeight);
+        fillPixelMoveSourceHole(ctx, sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height);
+        ctx.drawImage(
+            patchCanvas,
+            0,
+            0,
+            patchCanvas.width,
+            patchCanvas.height,
+            destRect.x,
+            destRect.y,
+            destRect.width,
+            destRect.height
+        );
+    }
+
+    function schedulePixelMovePreviewRender(sourceBounds, destBounds) {
+        if (!pixelMoveDragState && !pixelMovePendingState) {
+            hidePixelMovePreview();
+            return;
+        }
+        if (pixelMovePreviewRaf !== null) {
+            return;
+        }
+        pixelMovePreviewRaf = requestAnimationFrame(() => {
+            pixelMovePreviewRaf = null;
+            renderPixelMovePreview(sourceBounds, destBounds);
+        });
+    }
+
+    function cancelPendingSelectionPixelMove() {
+        if (!pixelMovePendingState) {
+            return false;
+        }
+        const sourceBounds = pixelMovePendingState.sourceBounds;
+        pixelMovePendingState = null;
+        hidePixelMovePreview();
+        if (cropper && sourceBounds) {
+            cropper.setData(sourceBounds);
+            updateSelectionPanelFromCrop();
+        }
+        syncMoveApplyButtonState();
+        return true;
+    }
+
+    function applyPendingSelectionPixelMove() {
+        if (!hasPendingSelectionPixelMove()) {
+            return false;
+        }
+        const { sourceBounds, destBounds } = pixelMovePendingState;
+        if (commitSelectionPixelMove(sourceBounds, destBounds)) {
+            pixelMovePendingState = null;
+            hidePixelMovePreview();
+            syncMoveApplyButtonState();
+            vscode.postMessage({ command: 'show-toast', text: t('toast.moveSelectionApplied') });
+            return true;
+        }
+        return false;
+    }
+
+    function buildImageWithMovedSelectionPixels(sourceBounds, destBounds) {
+        const canvas = document.createElement('canvas');
+        canvas.width = originalWidth;
+        canvas.height = originalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imageEl, 0, 0);
+
+        const sx = Math.round(sourceBounds.x);
+        const sy = Math.round(sourceBounds.y);
+        const sw = Math.round(sourceBounds.width);
+        const sh = Math.round(sourceBounds.height);
+        const patch = document.createElement('canvas');
+        patch.width = sw;
+        patch.height = sh;
+        patch.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+        ctx.clearRect(sx, sy, sw, sh);
+        ctx.drawImage(patch, Math.round(destBounds.x), Math.round(destBounds.y));
+
+        return canvas.toDataURL();
+    }
+
+    function cloneSelectionBounds(bounds) {
+        if (!bounds) {
+            return null;
+        }
+        if (cropMarqueeLogic.cloneNaturalCropSnapshot) {
+            return cropMarqueeLogic.cloneNaturalCropSnapshot(bounds);
+        }
+        if (Number(bounds.width) <= 0 || Number(bounds.height) <= 0) {
+            return null;
+        }
+        return {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height
+        };
+    }
+
+    function setSelectionPixelAnchor(bounds) {
+        selectionPixelAnchor = cloneSelectionBounds(bounds);
+    }
+
+    function clearSelectionPixelAnchor() {
+        selectionPixelAnchor = null;
+    }
+
+    function selectionBoundsEqual(a, b) {
+        if (!a || !b) {
+            return false;
+        }
+        return Math.round(a.x) === Math.round(b.x)
+            && Math.round(a.y) === Math.round(b.y)
+            && Math.round(a.width) === Math.round(b.width)
+            && Math.round(a.height) === Math.round(b.height);
+    }
+
+    function clearPendingSelectionPixelMove() {
+        if (!pixelMovePendingState) {
+            return false;
+        }
+        pixelMovePendingState = null;
+        hidePixelMovePreview();
+        syncMoveApplyButtonState();
+        return true;
+    }
+
+    function syncMoveToolSelectionFromCrop() {
+        if (!isSelectionMoveToolActive() || !cropper || !cropper.cropped || pixelMoveDragState) {
+            return;
+        }
+        const cropData = cropper.getData(true);
+        setSelectionPixelAnchor(cropData);
+        if (pixelMovePendingState && !selectionBoundsEqual(pixelMovePendingState.sourceBounds, cropData)) {
+            clearPendingSelectionPixelMove();
+        }
+        syncMoveToolWorkspaceClasses();
+    }
+
+    function commitSelectionPixelMove(sourceBounds, destBounds) {
+        if (!cropper || !sourceBounds || !destBounds) {
+            return false;
+        }
+        if (destBounds.x === sourceBounds.x && destBounds.y === sourceBounds.y) {
+            return false;
+        }
+
+        pushHistorySnapshot('edit.moveSelection');
+        const newSrc = buildImageWithMovedSelectionPixels(sourceBounds, destBounds);
+        initEditor(newSrc, {
+            restoreCropData: destBounds,
+            keepCropEnabled: true,
+            activateCursorTool: true
+        });
+        notifyDocumentChanged('edit.moveSelection');
+        return true;
+    }
+
+    function isPixelMoveCanvasTarget(e) {
+        if (!e || !canvasScrollArea || !workspace || workspace.style.display === 'none') {
+            return false;
+        }
+        if (!canvasScrollArea.contains(e.target)) {
+            return false;
+        }
+        if (e.target.closest('.floating-toolbar, .zoom-loupe-panel, .context-menu')) {
+            return false;
+        }
+        return true;
+    }
+
+    function isPointerOnSelectionSurface(e, point, cropData) {
+        if (isImplicitFullImageMoveSelection()) {
+            return !!(point && e.target.closest('.cropper-container, #image, .image-container'));
+        }
+        if (point && cropData && cropMarqueeLogic.isPointInCropSelection(point, cropData)) {
+            return true;
+        }
+        return !!(e.target && e.target.closest && e.target.closest('.cropper-face'));
+    }
+
+    function beginPixelMoveDrag(e) {
+        if (!isSelectionMoveToolActive() || !cropper || pixelMoveDragState) {
+            return false;
+        }
+        if (e.button !== 0) {
+            return false;
+        }
+
+        const cropData = cropper.getData(true);
+        const point = getClampedImagePointFromEvent(e);
+        if (!isPointerOnSelectionSurface(e, point, cropData)) {
+            return false;
+        }
+
+        if (pixelMovePendingState && !selectionBoundsEqual(pixelMovePendingState.sourceBounds, cropData)) {
+            clearPendingSelectionPixelMove();
+        }
+
+        const anchor = cloneSelectionBounds(cropData);
+        if (!anchor) {
+            return false;
+        }
+        setSelectionPixelAnchor(anchor);
+
+        const startPoint = point || {
+            x: Math.round(anchor.x + anchor.width / 2),
+            y: Math.round(anchor.y + anchor.height / 2)
+        };
+
+        const patchCanvas = capturePixelMovePatch(anchor);
+        if (!patchCanvas) {
+            return false;
+        }
+
+        const baseDestOffsetX = pixelMovePendingState
+            ? pixelMovePendingState.destBounds.x - anchor.x
+            : 0;
+        const baseDestOffsetY = pixelMovePendingState
+            ? pixelMovePendingState.destBounds.y - anchor.y
+            : 0;
+
+        pixelMoveDragState = {
+            sourceBounds: anchor,
+            startPoint,
+            patchCanvas,
+            baseDestOffsetX,
+            baseDestOffsetY
+        };
+        if (typeof e.target?.setPointerCapture === 'function' && e.pointerId !== undefined) {
+            try {
+                e.target.setPointerCapture(e.pointerId);
+            } catch (_err) {
+                // Ignore capture failures on unsupported targets.
+            }
+        }
+        updateCropInteraction();
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') {
+            e.stopImmediatePropagation();
+        }
+        return true;
+    }
+
+    function updatePixelMoveDrag(e) {
+        if (!pixelMoveDragState || !cropper) {
+            return;
+        }
+
+        const currentPoint = getClampedImagePointFromEvent(e);
+        if (!currentPoint) {
+            return;
+        }
+
+        const { deltaX, deltaY } = resolvePixelMoveDragDelta(currentPoint, pixelMoveDragState, !!e.shiftKey);
+        const destBounds = selectionMoveLogic.computeMovedBounds(
+            pixelMoveDragState.sourceBounds,
+            deltaX,
+            deltaY,
+            originalWidth,
+            originalHeight
+        );
+        if (!destBounds) {
+            return;
+        }
+
+        cropper.setData(destBounds);
+        updateSelectionPanelFromCrop();
+        schedulePixelMovePreviewRender(pixelMoveDragState.sourceBounds, destBounds);
+        e.preventDefault();
+    }
+
+    function endPixelMoveDrag(e) {
+        if (!pixelMoveDragState) {
+            return;
+        }
+
+        const currentPoint = (e && getClampedImagePointFromEvent(e)) || pixelMoveDragState.startPoint;
+        const { deltaX, deltaY } = resolvePixelMoveDragDelta(
+            currentPoint,
+            pixelMoveDragState,
+            !!(e && e.shiftKey)
+        );
+        const sourceBounds = pixelMoveDragState.sourceBounds;
+        const patchCanvas = pixelMoveDragState.patchCanvas;
+        pixelMoveDragState = null;
+        updateCropInteraction();
+
+        if (!selectionMoveLogic.hasPixelMoveDelta(deltaX, deltaY)) {
+            if (pixelMovePendingState) {
+                cropper.setData(pixelMovePendingState.destBounds);
+                updateSelectionPanelFromCrop();
+                schedulePixelMovePreviewRender(
+                    pixelMovePendingState.sourceBounds,
+                    pixelMovePendingState.destBounds
+                );
+            } else {
+                hidePixelMovePreview();
+                cropper.setData(sourceBounds);
+                updateSelectionPanelFromCrop();
+            }
+            syncMoveApplyButtonState();
+            return;
+        }
+
+        const destBounds = selectionMoveLogic.computeMovedBounds(
+            sourceBounds,
+            deltaX,
+            deltaY,
+            originalWidth,
+            originalHeight
+        );
+        if (!destBounds) {
+            if (pixelMovePendingState) {
+                cropper.setData(pixelMovePendingState.destBounds);
+                updateSelectionPanelFromCrop();
+                schedulePixelMovePreviewRender(
+                    pixelMovePendingState.sourceBounds,
+                    pixelMovePendingState.destBounds
+                );
+            } else {
+                hidePixelMovePreview();
+                cropper.setData(sourceBounds);
+                updateSelectionPanelFromCrop();
+            }
+            syncMoveApplyButtonState();
+            return;
+        }
+
+        pixelMovePendingState = {
+            sourceBounds,
+            destBounds,
+            patchCanvas
+        };
+        cropper.setData(destBounds);
+        updateSelectionPanelFromCrop();
+        schedulePixelMovePreviewRender(sourceBounds, destBounds);
+        syncMoveApplyButtonState();
+    }
+
     function moveCropMarqueeWithArrow(key, shiftKey) {
+        if (isSelectionMoveToolActive()) {
+            return false;
+        }
         if (!ensureCropMarqueeForKeyboard()) {
             return false;
         }
@@ -2384,6 +3299,9 @@
     });
 
     function onPanMouseDown(e) {
+        if (isSelectionMoveToolActive() && !isSpacePressed && !isHandPressed) {
+            return;
+        }
         if (!isPanShortcutPressed() || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
             return;
         }
@@ -2416,20 +3334,46 @@
         scheduleRulerRedraw();
     }
 
+    function onPixelMovePointerDown(e) {
+        if (!isPixelMoveCanvasTarget(e)) {
+            return;
+        }
+        if (beginPixelMoveDrag(e)) {
+            return;
+        }
+        if (isSelectionMoveToolActive() && cropper && e.target.closest('.cropper-face')) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof e.stopImmediatePropagation === 'function') {
+                e.stopImmediatePropagation();
+            }
+            return;
+        }
+        onMarqueeDragStart(e);
+    }
+
     document.addEventListener('mousedown', (e) => {
-        if (!isPanShortcutPressed() || !canvasScrollArea || e.button !== 0 || isEyedropperActive || isColorPickerMode || isZLoupeActive) {
+        if (!isPixelMoveCanvasTarget(e) || e.button !== 0) {
             return;
         }
-        if (!isPanTargetVisible()) {
+        if (isSelectionMoveToolActive() && !isSpacePressed && !isHandPressed) {
+            onPixelMovePointerDown(e);
             return;
         }
-        if (e.target.closest('.floating-toolbar')) {
+        if (isPanShortcutPressed() && !isEyedropperActive && !isColorPickerMode && !isZLoupeActive && isPanTargetVisible()) {
+            onPanMouseDown(e);
             return;
         }
-        if (!canvasScrollArea.contains(e.target)) {
+        onMarqueeDragStart(e);
+    }, true);
+
+    document.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || !isPixelMoveCanvasTarget(e)) {
             return;
         }
-        onPanMouseDown(e);
+        if (isSelectionMoveToolActive() && !isSpacePressed && !isHandPressed) {
+            onPixelMovePointerDown(e);
+        }
     }, true);
 
     document.addEventListener('mousemove', onPanMouseMove);
@@ -2583,6 +3527,7 @@
         bindToolRailTooltipInteractions();
         bindSidebarAutoCollapse();
         setFileSizeLabel(currentFileSizeBytes);
+        setFileFormatLabel(currentFileMimeType);
         startEditorMode();
         isBootstrapComplete = true;
         flushPendingStartupFile();
@@ -2648,7 +3593,9 @@
         };
         reader.onload = (event) => {
             currentFileSizeBytes = parseFileSizeBytes(file.size);
+            currentFileMimeType = file.type || parseMimeTypeFromDataUrl(event.target.result) || currentFileMimeType;
             setFileSizeLabel(currentFileSizeBytes);
+            setFileFormatLabel(currentFileMimeType);
             dashboard.style.display = 'none';
             workspace.style.display = 'grid';
             showEditorChrome();
@@ -2712,8 +3659,11 @@
         const preserveSharpenAdjust = options && options.preserveSharpenAdjust;
         const restoreCropData = options && options.restoreCropData;
         const keepCropEnabled = options && options.keepCropEnabled;
+        const activateCursorTool = options && options.activateCursorTool;
         const startEyedropper = options && options.startEyedropper;
         hideMosaicModal();
+        hidePixelMovePreview();
+        pixelMovePendingState = null;
         if (!preserveSharpenAdjust) {
             resetSharpenAdjust();
         }
@@ -2765,6 +3715,8 @@
                 ready() {
                     let clampedRestoreCropData = null;
                     if (keepCropEnabled && restoreCropData) {
+                        suppressCropCheckboxPreserveSelection = true;
+                        suppressCropCheckboxToolSync = true;
                         chkEnableCrop.checked = true;
                         syncCropPresetUI();
                         cropper.crop();
@@ -2778,6 +3730,11 @@
                         updateResizeInputsFromCrop();
                         updateSelectionPanelFromCrop();
                         cacheNaturalCropData();
+                        suppressCropCheckboxToolSync = false;
+                        suppressCropCheckboxPreserveSelection = false;
+                    }
+                    if (activateCursorTool) {
+                        setActiveTool('cursor', { keepCropEnabled: true, setMarqueeMode: false });
                     }
                     if (canvasScrollArea) {
                         canvasScrollArea.scrollLeft = 0;
@@ -2826,6 +3783,7 @@
                     updateResizeInputsFromCrop();
                     updateSelectionPanelFromCrop();
                     cacheNaturalCropData();
+                    syncMoveToolSelectionFromCrop();
                     if (mosaicPreviewState) {
                         mosaicPreviewState.cropData = cropper.getData(true);
                         scheduleMosaicPreviewRender();
@@ -3118,8 +4076,9 @@
 
     function syncCropPresetUI() {
         const isEnabled = chkEnableCrop.checked;
+        const hasMarqueeOverlay = shouldShowCropMarqueeOverlay();
         if (workspace) {
-            workspace.classList.toggle('crop-active', isEnabled);
+            workspace.classList.toggle('crop-active', hasMarqueeOverlay);
         }
         presetButtons.forEach(btn => {
             btn.disabled = !isEnabled;
@@ -3128,11 +4087,11 @@
             btnApplyCrop.disabled = !isEnabled;
         }
         if (btnApplyMosaic) {
-            btnApplyMosaic.disabled = !isEnabled || !cropper || !cropper.cropped;
+            btnApplyMosaic.disabled = !hasMarqueeOverlay || !cropper || !cropper.cropped;
         }
         syncMosaicAvailability();
         updateCropInteraction();
-        if (isEnabled) {
+        if (hasMarqueeOverlay) {
             updateSelectionPanelFromCrop();
         } else {
             resetSelectionPanel();
@@ -3140,7 +4099,7 @@
     }
 
     function syncMosaicAvailability() {
-        const canUseMosaic = !!(cropper && chkEnableCrop.checked && cropper.cropped);
+        const canUseMosaic = hasActiveMarqueeSelection();
         const getMosaicTitle = (btn) => {
             if (canUseMosaic) {
                 const titleKey = btn && btn.getAttribute('data-i18n-title');
@@ -3160,28 +4119,62 @@
         });
     }
 
+    function setCropOverlayEnabledSilently(enabled) {
+        if (!chkEnableCrop || chkEnableCrop.checked === enabled) {
+            return;
+        }
+        suppressCropCheckboxPreserveSelection = true;
+        suppressCropCheckboxToolSync = true;
+        chkEnableCrop.checked = enabled;
+        syncCropPresetUI();
+        applyMarqueeShape(false);
+        suppressCropCheckboxToolSync = false;
+        suppressCropCheckboxPreserveSelection = false;
+    }
+
+    function enableCropOverlayPreservingSelection() {
+        if (!cropper || !cropper.cropped) {
+            return;
+        }
+        setCropOverlayEnabledSilently(true);
+        updateResizeInputsFromCrop();
+        updateSelectionPanelFromCrop();
+    }
+
     // Crop Toggle Checkbox listener
     chkEnableCrop.addEventListener('change', () => {
         if (chkEnableCrop.checked) {
             if (cropper) {
-                initMarqueeToFullImage();
+                if (!suppressCropCheckboxPreserveSelection && !cropper.cropped) {
+                    const pendingSelection = resolveCropDataForRestore();
+                    if (pendingSelection) {
+                        restoreCropSelectionBounds(pendingSelection);
+                    } else {
+                        initMarqueeToFullImage();
+                    }
+                }
                 // Highlight Free preset by default when crop is checked on
                 applyMarqueeShape();
                 isMarqueeMode = false;
                 updateResizeInputsFromCrop();
             }
         } else {
-            if (cropper) {
+            if (cropper && !suppressCropCheckboxPreserveSelection) {
                 cropper.clear();
             }
-            syncResizeInputsToOriginal();
-            clearNaturalCropData();
+            if (!suppressCropCheckboxPreserveSelection) {
+                syncResizeInputsToOriginal();
+                clearNaturalCropData();
+            }
             applyMarqueeShape();
             isMarqueeMode = false;
         }
         syncCropPresetUI();
         syncMosaicAvailability();
         if (suppressCropCheckboxToolSync) {
+            return;
+        }
+        if (activeTool === 'move' && chkEnableCrop.checked) {
             return;
         }
         setActiveTool(chkEnableCrop.checked ? (isMarqueeMode ? 'marquee' : 'crop') : 'cursor', {
@@ -3339,7 +4332,7 @@
         if (!chkEnableCrop.checked) {
             chkEnableCrop.checked = true;
             syncCropPresetUI();
-            if (cropper) {
+            if (cropper && !cropper.cropped) {
                 initMarqueeToFullImage();
             }
         }
@@ -3368,11 +4361,18 @@
 
         if (toolRailLogic.shouldEnableCropForTool(activeTool) && !chkEnableCrop.checked) {
             ensureCropModeEnabled();
-        } else if (!toolRailLogic.shouldEnableCropForTool(activeTool) && chkEnableCrop.checked && !options.keepCropEnabled) {
+        } else if (
+            !toolRailLogic.shouldEnableCropForTool(activeTool)
+            && chkEnableCrop.checked
+            && !options.keepCropEnabled
+            && !(cropper && cropper.cropped)
+        ) {
+            suppressCropCheckboxPreserveSelection = hasActiveMarqueeSelection();
             suppressCropCheckboxToolSync = true;
             chkEnableCrop.checked = false;
             chkEnableCrop.dispatchEvent(new Event('change'));
             suppressCropCheckboxToolSync = false;
+            suppressCropCheckboxPreserveSelection = false;
         }
 
         if (options.setMarqueeMode === true) {
@@ -3382,12 +4382,150 @@
         }
 
         if (activeTool === 'move') {
-            setPanMode(true);
+            if (cropper && cropper.cropped) {
+                setPanMode(false);
+                enableCropOverlayPreservingSelection();
+                applyMarqueeShape(false);
+                updateSelectionPanelFromCrop();
+            } else {
+                setPanMode(true);
+            }
         } else {
             setPanMode(isPanShortcutPressed());
         }
 
+        syncMoveToolWorkspaceClasses();
+
         updateCropInteraction();
+        if (activeTool !== 'move') {
+            cancelPendingSelectionPixelMove();
+            clearSelectionPixelAnchor();
+        }
+        syncMoveApplyButtonState();
+    }
+
+    function cloneCropSelectionSnapshot() {
+        if (!cropper) {
+            return null;
+        }
+        if (cropper.cropped) {
+            const data = cropper.getData(true);
+            if (cropMarqueeLogic.cloneNaturalCropSnapshot) {
+                return cropMarqueeLogic.cloneNaturalCropSnapshot(data);
+            }
+            if (!data || Number(data.width) <= 0 || Number(data.height) <= 0) {
+                return null;
+            }
+            return {
+                x: data.x,
+                y: data.y,
+                width: data.width,
+                height: data.height
+            };
+        }
+        if (lastNaturalCropData) {
+            if (cropMarqueeLogic.cloneNaturalCropSnapshot) {
+                return cropMarqueeLogic.cloneNaturalCropSnapshot(lastNaturalCropData);
+            }
+            return {
+                x: lastNaturalCropData.x,
+                y: lastNaturalCropData.y,
+                width: lastNaturalCropData.width,
+                height: lastNaturalCropData.height
+            };
+        }
+        return null;
+    }
+
+    function resolveCropDataForRestore() {
+        return cloneCropSelectionSnapshot();
+    }
+
+    function restoreCropSelectionBounds(bounds) {
+        if (!cropper || !bounds) {
+            return false;
+        }
+        if (!cropper.cropped) {
+            cropper.crop();
+        }
+        cropper.setData(clampCropBox(bounds.x, bounds.y, bounds.width, bounds.height));
+        updateResizeInputsFromCrop();
+        updateSelectionPanelFromCrop();
+        cacheNaturalCropData();
+        return true;
+    }
+
+    function publishToolDebugState() {
+        const cropData = cropper && cropper.cropped ? cropper.getData(true) : null;
+        vscode.postMessage({
+            command: 'tool-state',
+            activeTool,
+            selectionMoveActive: isSelectionMoveToolActive(),
+            cropEnabled: !!(chkEnableCrop && chkEnableCrop.checked),
+            cropped: !!(cropper && cropper.cropped),
+            cropWidth: cropData ? Number(cropData.width) || 0 : 0,
+            cropHeight: cropData ? Number(cropData.height) || 0 : 0
+        });
+    }
+
+    function enterSelectionMoveTool() {
+        if (!cropper) {
+            return;
+        }
+
+        endMagicWandMode(false);
+        endColorPickerMode();
+        isMarqueeMode = false;
+        clearPendingSelectionPixelMove();
+
+        activeTool = 'move';
+        syncToolRailButtons();
+        syncToolOptionsVisibility();
+        setPanMode(false);
+        applyMarqueeShape(false);
+
+        if (hasActiveMarqueeSelection()) {
+            const preservedBounds = cloneSelectionBounds(cropper.getData(true));
+            enableCropOverlayPreservingSelection();
+            if (preservedBounds) {
+                restoreCropSelectionBounds(preservedBounds);
+            }
+        } else {
+            initMarqueeToFullImage();
+            if (chkEnableCrop.checked) {
+                setCropOverlayEnabledSilently(false);
+            } else {
+                syncCropPresetUI();
+            }
+        }
+
+        if (cropper.cropped) {
+            setSelectionPixelAnchor(cropper.getData(true));
+        } else {
+            clearSelectionPixelAnchor();
+        }
+
+        syncMoveToolWorkspaceClasses();
+        updateCropInteraction();
+        focusCropKeyboardTarget();
+        publishToolDebugState();
+        syncMoveApplyButtonState();
+    }
+
+    function activateMoveToolWithKey() {
+        if (activeTool === 'move' && isSelectionMoveToolActive()) {
+            focusCropKeyboardTarget();
+            return;
+        }
+        enterSelectionMoveTool();
+    }
+
+    function toggleMoveToolWithKey() {
+        if (activeTool === 'move') {
+            setActiveTool('cursor', { keepCropEnabled: true, setMarqueeMode: false });
+            return;
+        }
+        activateMoveToolWithKey();
     }
 
     function autoCropToContent() {
@@ -3636,7 +4774,11 @@
                 return;
             }
             if (tool === 'move') {
-                setActiveTool('move');
+                if (activeTool === 'move') {
+                    setActiveTool('cursor', { keepCropEnabled: true, setMarqueeMode: false });
+                } else {
+                    activateMoveToolWithKey();
+                }
             }
         });
     });
@@ -3754,6 +4896,12 @@
         });
     }
 
+    if (btnApplyMoveSelection) {
+        btnApplyMoveSelection.addEventListener('click', () => {
+            applyPendingSelectionPixelMove();
+        });
+    }
+
     // Hook up saving triggers
     const btnSave = document.getElementById('btnSave');
     const btnExport = document.getElementById('btnExport');
@@ -3766,8 +4914,19 @@
     const COPY_SCOPE_STORAGE_KEY = 'vsimage.copyScopeSelection';
     let selectedCopyFormat = 'image/png';
 
+    function hasActiveMarqueeSelection() {
+        if (!cropper || !cropper.cropped) {
+            return false;
+        }
+        if (cropMarqueeLogic.hasActiveMarqueeSelection) {
+            return cropMarqueeLogic.hasActiveMarqueeSelection(cropper.cropped, cropper.getData(true));
+        }
+        const data = cropper.getData(true);
+        return !!(data && Number(data.width) > 0 && Number(data.height) > 0);
+    }
+
     function hasActiveCopySelection() {
-        return !!(cropper && chkEnableCrop.checked && cropper.cropped);
+        return hasActiveMarqueeSelection();
     }
 
     function updateCopyScopeUI() {
@@ -3789,14 +4948,7 @@
     }
 
     function getCopyFormatLabel(mimeType) {
-        switch (mimeType) {
-            case 'image/jpeg':
-                return t('copyModal.formatJpeg');
-            case 'image/webp':
-                return t('copyModal.formatWebp');
-            default:
-                return t('copyModal.formatPng');
-        }
+        return getImageFormatLabel(mimeType);
     }
 
     function syncCopyQualityVisibility() {
@@ -3852,6 +5004,7 @@
 
     function performCopyToClipboard(format, qualityPercent, selectionOnly) {
         if (!cropper) {
+            notifyToast(t('toast.noImageCopy'), { isError: true });
             return;
         }
 
@@ -3873,68 +5026,54 @@
             return t('toast.imageCopiedAs', { format: getCopyFormatLabel(format) });
         }
 
-        function requestHostClipboardCopyDataUrl(dataUrl, successText) {
-            vscode.postMessage({ command: 'host-clipboard-request' });
-            vscode.postMessage({
-                command: 'copy-image',
-                dataUrl,
-                successText
-            });
-            hideCopyModal();
-        }
-
         if (!window.editorApi || !window.editorApi.getCanvasBlob) {
-            vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
+            notifyToast(t('toast.noImageCopy'), { isError: true });
             return;
         }
 
         const toastText = getCopySuccessToastText();
-        if (usesMacShortcuts()) {
-            try {
-                const dataUrl = window.editorApi.getCanvasDataUrl
-                    ? window.editorApi.getCanvasDataUrl({ format, quality, copySelectionOnly: useSelection })
-                    : null;
-                if (!dataUrl) {
-                    vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
-                    return;
-                }
-                requestHostClipboardCopyDataUrl(dataUrl, toastText);
-            } catch (err) {
-                vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardFailed', { error: String(err) }) });
-            }
-            return;
-        }
+        const exportFormat = shouldUseHostClipboardCopy()
+            ? resolveHostClipboardExportFormat(format)
+            : format;
+        const canvasExportOptions = {
+            format: exportFormat,
+            quality,
+            copySelectionOnly: useSelection
+        };
 
         try {
-            window.editorApi.getCanvasBlob((blob) => {
-                if (!blob) {
-                    vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
+            if (shouldUseHostClipboardCopy()) {
+                logCopyDebug('performCopyToClipboard: host path via dataUrl');
+                const dataUrl = window.editorApi.getCanvasDataUrl(canvasExportOptions);
+                if (!dataUrl) {
+                    notifyToast(t('toast.noImageCopy'), { isError: true });
                     return;
                 }
-
-                const clipboard = navigator.clipboard;
-                const ClipboardItemCtor = window.ClipboardItem;
-                if (!clipboardLogic.canWriteClipboardImage(clipboard && clipboard.write, ClipboardItemCtor)) {
-                    vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardUnavailable') });
-                    return;
-                }
-
-                clipboard.write([
-                    new ClipboardItemCtor({
-                        [blob.type]: blob
-                    })
-                ]).then(() => {
-                    hideCopyModal();
-                    vscode.postMessage({ command: 'show-toast', text: toastText });
-                }).catch((err) => {
-                    vscode.postMessage({
-                        command: 'show-toast',
-                        text: t('toast.clipboardFailed', { error: String(err) })
-                    });
+                beginCopyResultWatch();
+                vscode.postMessage({ command: 'host-clipboard-request' });
+                vscode.postMessage({
+                    command: 'copy-image',
+                    dataUrl,
+                    mimeType: exportFormat,
+                    successText: toastText
                 });
-        }, { format, quality, copySelectionOnly: useSelection });
+                hideCopyModal();
+                return;
+            }
+
+            logCopyDebug('performCopyToClipboard: requesting canvas blob');
+            window.editorApi.getCanvasBlob((blob) => {
+                logCopyDebug(`performCopyToClipboard: blob=${blob ? `${blob.type}:${blob.size}` : 'null'}`);
+                if (!blob) {
+                    notifyToast(t('toast.noImageCopy'), { isError: true });
+                    return;
+                }
+
+                copyBlobViaWebviewClipboard(blob, toastText);
+            }, canvasExportOptions);
         } catch (err) {
-            vscode.postMessage({ command: 'show-toast', text: t('toast.clipboardFailed', { error: String(err) }) });
+            logCopyDebug(`performCopyToClipboard error: ${err}`);
+            notifyToast(t('toast.clipboardFailed', { error: String(err) }), { isError: true });
         }
     }
 
@@ -4118,16 +5257,24 @@
     // Clipboard Copy Engine
     function copyImageToClipboard() {
         vscode.postMessage({ command: 'copy-function-enter' });
-        if (!cropper) {
-            vscode.postMessage({ command: 'show-toast', text: t('toast.noImageCopy') });
-            return;
+        try {
+            logCopyDebug(`copy start platform=${getHostPlatform() || 'unknown'}`);
+            ensureCopyFocusTarget();
+            if (!cropper) {
+                notifyToast(t('toast.noImageCopy'), { isError: true });
+                return;
+            }
+            const format = clipboardLogic.resolveCopyFormat(sessionStorage.getItem(COPY_FORMAT_STORAGE_KEY) || selectedCopyFormat);
+            const savedQuality = sessionStorage.getItem(COPY_QUALITY_STORAGE_KEY);
+            const qualityFallback = rngQuality ? parseInt(rngQuality.value, 10) : 80;
+            const qualityPercent = clipboardLogic.resolveCopyQuality(savedQuality, qualityFallback);
+            const savedScope = sessionStorage.getItem(COPY_SCOPE_STORAGE_KEY);
+            const selectionOnly = clipboardLogic.resolveSelectionOnly(hasActiveCopySelection(), savedScope);
+            performCopyToClipboard(format, qualityPercent, selectionOnly);
+        } catch (err) {
+            logCopyDebug(`copyImageToClipboard error: ${err}`);
+            notifyToast(t('toast.clipboardFailed', { error: String(err) }), { isError: true });
         }
-        const format = clipboardLogic.resolveCopyFormat(sessionStorage.getItem(COPY_FORMAT_STORAGE_KEY) || selectedCopyFormat);
-        const savedQuality = sessionStorage.getItem(COPY_QUALITY_STORAGE_KEY);
-        const qualityPercent = clipboardLogic.resolveCopyQuality(savedQuality, parseInt(rngQuality.value, 10));
-        const savedScope = sessionStorage.getItem(COPY_SCOPE_STORAGE_KEY);
-        const selectionOnly = clipboardLogic.resolveSelectionOnly(hasActiveCopySelection(), savedScope);
-        performCopyToClipboard(format, qualityPercent, selectionOnly);
     }
 
     function shouldLetNativeTextCopyProceed(activeEl) {
@@ -4847,7 +5994,7 @@
     }, true);
 
     workspace.addEventListener('mousemove', (e) => {
-        const onMarqueeFace = !!(cropper && chkEnableCrop.checked && cropper.cropped && !marqueeGestureState
+        const onMarqueeFace = !!(hasActiveMarqueeSelection() && !marqueeGestureState
             && !mosaicPreviewState
             && !(copyModal && copyModal.style.display === 'flex')
             && !(colorModal && colorModal.style.display === 'flex')
@@ -4886,8 +6033,10 @@
         e.preventDefault();
     };
 
-    workspace.addEventListener('pointerdown', onMarqueeDragStart, true);
-    workspace.addEventListener('mousedown', onMarqueeDragStart, true);
+    document.addEventListener('pointermove', updatePixelMoveDrag, true);
+    document.addEventListener('mousemove', updatePixelMoveDrag, true);
+    document.addEventListener('pointerup', endPixelMoveDrag, true);
+    document.addEventListener('mouseup', endPixelMoveDrag, true);
     document.addEventListener('pointermove', updateMarqueeDragCreate, true);
     document.addEventListener('mousemove', updateMarqueeDragCreate, true);
     document.addEventListener('pointerup', endMarqueeDragCreate, true);
@@ -5143,6 +6292,10 @@
             toggleMarqueeModeWithKey();
             return true;
         }
+        if (shortcutAction === 'move') {
+            activateMoveToolWithKey();
+            return true;
+        }
         if (shortcutAction === 'mosaic') {
             setActiveTool('mosaic', { keepCropEnabled: true });
             showMosaicModal();
@@ -5239,6 +6392,9 @@
                 endEyedropper();
                 return;
             }
+            if (isSelectionMoveToolActive() && cancelPendingSelectionPixelMove()) {
+                return;
+            }
             if (cropper) {
                 chkEnableCrop.checked = false;
                 syncCropPresetUI();
@@ -5253,12 +6409,14 @@
         if (isInput) {
             // Still allow core editor shortcuts inside input focus.
             if (runShortcutAction(shortcutAction, { inputFocused: true })) {
+                markLocalShortcutHandled(shortcutAction);
                 e.preventDefault();
             }
             return;
         }
 
         if (runShortcutAction(shortcutAction)) {
+            markLocalShortcutHandled(shortcutAction);
             e.preventDefault();
             return;
         }
@@ -5268,7 +6426,7 @@
             if (magicWandMask) {
                 e.preventDefault();
                 eraseMagicWandSelection();
-            } else if (chkEnableCrop.checked && cropper && cropper.cropped) {
+            } else if (hasActiveMarqueeSelection()) {
                 e.preventDefault();
                 eraseSelection();
             }
@@ -5280,7 +6438,7 @@
 
         // Shrink crop marquee: [ (Shift = 10px per side)
         if (isBracketLeft && !e.metaKey && !e.ctrlKey && !e.altKey) {
-            if (chkEnableCrop.checked && cropper && resizeCropMarqueeByInset(1, e.shiftKey)) {
+            if (cropper && resizeCropMarqueeByInset(1, e.shiftKey)) {
                 e.preventDefault();
             }
             return;
@@ -5288,7 +6446,7 @@
 
         // Expand crop marquee: ] (Shift = 10px per side)
         if (isBracketRight && !e.metaKey && !e.ctrlKey && !e.altKey) {
-            if (chkEnableCrop.checked && cropper && resizeCropMarqueeByInset(-1, e.shiftKey)) {
+            if (cropper && resizeCropMarqueeByInset(-1, e.shiftKey)) {
                 e.preventDefault();
             }
             return;
@@ -5296,19 +6454,22 @@
 
         // Move crop marquee: Arrow keys (Shift = 10px)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            if (chkEnableCrop.checked && cropper) {
-                if (moveCropMarqueeWithArrow(e.key, e.shiftKey)) {
-                    e.preventDefault();
-                }
+            if (cropper && moveCropMarqueeWithArrow(e.key, e.shiftKey)) {
+                e.preventDefault();
             }
             return;
         }
 
-        // Enter: apply crop selection if crop mode is active
+        // Enter: apply pending move, crop, or mosaic
         if (e.key === 'Enter') {
             if (mosaicPreviewState) {
                 e.preventDefault();
                 commitMosaicSelection();
+                return;
+            }
+            if (isSelectionMoveToolActive() && hasPendingSelectionPixelMove()) {
+                e.preventDefault();
+                applyPendingSelectionPixelMove();
                 return;
             }
             if (copyModal && copyModal.style.display === 'flex') {
@@ -5316,7 +6477,7 @@
                 confirmCopyToClipboard();
                 return;
             }
-            if (chkEnableCrop.checked && cropper && cropper.cropped) {
+            if (chkEnableCrop.checked && cropper && cropper.cropped && activeTool === 'crop') {
                 e.preventDefault();
                 btnApplyCrop.click();
             }
@@ -5366,12 +6527,15 @@
 
         const targetWidth = parseInt(txtWidth.value, 10) || originalWidth;
         const targetHeight = parseInt(txtHeight.value, 10) || originalHeight;
-        const hasSelection = chkEnableCrop.checked && cropper.cropped;
+        const hasSelection = hasActiveMarqueeSelection();
         const copySelectionOnly = options && options.copySelectionOnly;
 
         let canvas;
 
         if (copySelectionOnly && hasSelection) {
+            if (!cropper.cropped) {
+                cropper.crop();
+            }
             canvas = cropper.getCroppedCanvas({
                 imageSmoothingEnabled: true,
                 imageSmoothingQuality: 'high'
@@ -5431,7 +6595,7 @@
             const quality = (options && options.quality != null)
                 ? options.quality
                 : parseFloat(rngQuality.value) / 100;
-            canvas.toBlob(callback, format, quality);
+            canvasToBlob(canvas, format, quality, callback);
         }
     };
 })();
