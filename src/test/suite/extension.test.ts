@@ -23,6 +23,24 @@ async function pasteboardTypes(): Promise<string> {
     ]);
 }
 
+async function waitForDebugState<T extends object>(
+    predicate: (state: T) => boolean,
+    timeoutMs = 5000
+): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    let lastState: T | undefined;
+
+    while (Date.now() < deadline) {
+        lastState = await vscode.commands.executeCommand<T>('vsimage.debugState');
+        if (lastState && predicate(lastState)) {
+            return lastState;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    assert.fail(`Timed out waiting for debug state. Last state: ${JSON.stringify(lastState)}`);
+}
+
 suite('VS Code Image Editor Integration Suite', () => {
     vscode.window.showInformationMessage('Start all tests.');
 
@@ -123,9 +141,8 @@ suite('VS Code Image Editor Integration Suite', () => {
         await vscode.commands.executeCommand('vsimage.runShortcut', { action: 'marquee' });
         await new Promise(resolve => setTimeout(resolve, 300));
         await vscode.commands.executeCommand('vsimage.runShortcut', { action: 'move' });
-        await new Promise(resolve => setTimeout(resolve, 400));
 
-        const debugState = await vscode.commands.executeCommand<{
+        const debugState = await waitForDebugState<{
             editorReadyCount: number;
             readyWebviewCount: number;
             lastShortcutAction: string;
@@ -135,7 +152,7 @@ suite('VS Code Image Editor Integration Suite', () => {
             cropped: boolean;
             cropWidth: number;
             cropHeight: number;
-        }>('vsimage.debugState');
+        }>(state => state.lastShortcutAction === 'move' && state.lastActiveTool === 'move');
 
         assert.ok(debugState);
         assert.ok((debugState?.editorReadyCount ?? 0) > 0);
