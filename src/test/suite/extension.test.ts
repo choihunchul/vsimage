@@ -134,9 +134,13 @@ suite('VS Code Image Editor Integration Suite', () => {
             'base64'
         ));
 
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         await vscode.workspace.fs.writeFile(fileUri, png8x8);
         await vscode.commands.executeCommand('vscode.openWith', fileUri, 'vsimage.editor');
-        await new Promise(resolve => setTimeout(resolve, 900));
+        await waitForDebugState<{
+            webviewCount: number;
+            readyWebviewCount: number;
+        }>(state => state.webviewCount > 0 && state.readyWebviewCount > 0);
 
         await vscode.commands.executeCommand('vsimage.runShortcut', { action: 'marquee' });
         await new Promise(resolve => setTimeout(resolve, 300));
