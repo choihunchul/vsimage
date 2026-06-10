@@ -537,11 +537,12 @@ suite('Webview contracts', () => {
     test('bridges VS Code webview keybindings into editor shortcuts', () => {
         const keybindings = manifest.contributes?.keybindings ?? [];
         const bridgedActions = ['save', 'undo', 'copy', 'selectAll', 'marquee', 'move', 'crop', 'mosaic', 'rotateLeft', 'rotateRight', 'zoomIn', 'zoomOut', 'fitViewport', 'actualPixels'];
+        const focusedWebviewWhenClause = "webviewId == 'vsimage.editor'";
 
         for (const action of bridgedActions) {
             const binding = keybindings.find(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === action);
             assert.ok(binding, `${action} keybinding is missing`);
-            assert.strictEqual(binding.when, "activeEditor == 'vsimage.editor' || activeCustomEditor == 'vsimage.editor' || activeCustomEditorId == 'vsimage.editor' || activeWebviewPanelId == 'vsimage.editor'");
+            assert.strictEqual(binding.when, focusedWebviewWhenClause);
         }
 
         const cropBindings = keybindings.filter(item => item.command === 'vsimage.runShortcut' && (item.args as { action?: string } | undefined)?.action === 'crop');
